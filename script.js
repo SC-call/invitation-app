@@ -1,4 +1,4 @@
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/1Lj6yEZrs3N3VbblG8M2OtmbrSbbFAqK50S6zkeEOydD3K2kQiG6g4KNx/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFkgCPHOMgFwVzguv83oWvAnAHYm4Uqw7tbQ_WavzqcZlHQ4a3VmUEau22DYQNNmlQ/exec';
 
 var currentUser = null;
 var currentFunction = 'invite';
