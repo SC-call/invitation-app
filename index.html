@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#4285f4">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="健檢邀約">
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js"></script>
+    <link rel="manifest" href="manifest.json">
+    <title>健檢邀約系統</title>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>健檢邀約系統</h1>
+            <p>請選擇邀約人員並填寫民眾資料</p>
+            <div class="network-status" id="networkStatus" title="網路狀態"></div>
+        </div>
+        
+        <!-- 同步狀態提示 -->
+        <div class="sync-status" id="syncStatus"></div>
+        
+        <!-- 登入/選擇人員區塊 -->
+        <div class="login-section">
+            <div class="user-info" id="userInfo">
+                <div>
+                    <div class="user-name">請選擇邀約人員</div>
+                </div>
+            </div>
+            
+            <div class="login-form" id="loginForm">
+                <select id="staffSelect" required>
+                    <option value="">選擇邀約人員</option>
+                </select>
+                <input type="password" id="staffPassword" placeholder="密碼(如有)" maxlength="20">
+                <button type="button" class="btn btn-secondary" onclick="login()">登入</button>
+            </div>
+            
+            <div class="quota-info" id="quotaInfo" style="display: none;">
+                <div class="quota-item">
+                    <div class="quota-number" id="todayCount">0</div>
+                    <div class="quota-label">今日已邀約(主約)</div>
+                </div>
+                <div class="quota-item">
+                    <div class="quota-number" id="todayLimit">0</div>
+                    <div class="quota-label">今日總限額</div>
+                </div>
+                <div class="quota-item">
+                    <div class="quota-number" id="remainingCount">0</div>
+                    <div class="quota-label">剩餘額度</div>
+                </div>
+            </div>
+            
+            <div class="session-quotas" id="sessionQuotas" style="display: none;">
+                <div class="session-quota morning" id="morningQuota">
+                    <div class="quota-label">早上場(主約)</div>
+                    <div><span id="morningCount">0</span>/<span id="morningLimit">0</span></div>
+                </div>
+                <div class="session-quota afternoon" id="afternoonQuota">
+                    <div class="quota-label">下午場(主約)</div>
+                    <div><span id="afternoonCount">0</span>/<span id="afternoonLimit">0</span></div>
+                </div>
+                <div class="session-quota evening" id="eveningQuota">
+                    <div class="quota-label">晚上場(主約)</div>
+                    <div><span id="eveningCount">0</span>/<span id="eveningLimit">0</span></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 功能選擇區塊 -->
+        <div class="function-tabs" id="functionTabs" style="display: none;">
+            <button class="tab-btn active" onclick="switchFunction('invite')">新增邀約</button>
+            <button class="tab-btn" onclick="switchFunction('list')">今日邀約</button>
+        </div>
+        
+        <div class="main-content" id="mainContent" style="display: none;">
+            <div class="alert" id="alertMessage"></div>
+            
+            <!-- 新增邀約表單 -->
+            <div id="inviteSection">
+                <div class="quota-warning" id="quotaWarning"></div>
+                <form id="invitationForm">
+                    <!-- 個人資訊 -->
+                    <div class="form-section">
+                        <div class="section-title">個人資訊</div>
+                        
+                        <div class="form-group">
+                            <label for="name">姓名 *</label>
+                            <input type="text" id="name" name="name" required>
+                        </div>
+                        
+                        <div class="phone-group">
+                            <div class="form-group">
+                                <label for="phone1">電話號碼1 *</label>
+                                <input type="tel" id="phone1" name="phone1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="phone2">電話號碼2</label>
+                                <input type="tel" id="phone2" name="phone2">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 健檢項目 -->
+                    <div class="form-section">
+                        <div class="section-title">健檢項目</div>
+                        <div class="health-checks">
+                            <div class="checkbox-item checked" onclick="toggleCheckbox('mammography')">
+                                <input type="checkbox" id="mammography" name="mammography" value="1" checked>
+                                <label for="mammography">乳攝</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleCheckbox('firstScreen')">
+                                <input type="checkbox" id="firstScreen" name="firstScreen" value="1">
+                                <label for="firstScreen">首篩</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleCheckbox('cervicalSmear')">
+                                <input type="checkbox" id="cervicalSmear" name="cervicalSmear" value="1">
+                                <label for="cervicalSmear">子抹</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleCheckbox('adultHealth')">
+                                <input type="checkbox" id="adultHealth" name="adultHealth" value="1">
+                                <label for="adultHealth">成健</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleCheckbox('hepatitis')">
+                                <input type="checkbox" id="hepatitis" name="hepatitis" value="1">
+                                <label for="hepatitis">BC肝炎</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleCheckbox('colorectal')">
+                                <input type="checkbox" id="colorectal" name="colorectal" value="1">
+                                <label for="colorectal">大腸</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 場次資訊 -->
+                    <div class="form-section">
+                        <div class="section-title">場次資訊</div>
+                        
+                        <div class="form-group">
+                            <label for="sessionInfo">選擇場次 *</label>
+                            <select id="sessionInfo" name="sessionInfo" required onchange="checkQuotaWarning()">
+                                <option value="">載入中...</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="session">時段 *</label>
+                            <select id="session" name="session" required onchange="checkQuotaWarning()">
+                                <option value="">選擇時段</option>
+                                <option value="早上場">早上場</option>
+                                <option value="下午場">下午場</option>
+                                <option value="晚上場">晚上場</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- 備註 -->
+                    <div class="form-section">
+                        <div class="section-title">備註</div>
+                        <div class="form-group">
+                            <textarea id="notes" name="notes" rows="2" placeholder="輸入備註資訊..."></textarea>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn" id="submitBtn">提交邀約資料</button>
+                    <div class="submit-status" id="submitStatus"></div>
+                </form>
+            </div>
+            
+            <!-- 今日邀約名單 -->
+            <div id="listSection" style="display: none;">
+                <div class="form-section">
+                    <div class="section-title">今日邀約名單</div>
+                    
+                    <!-- 本地統計資訊 -->
+                    <div class="local-stats" id="localStats">
+                        <div class="stats-row">
+                            <span>本地邀約數量:</span>
+                            <span id="localCount">0</span>
+                        </div>
+                        <div class="stats-row">
+                            <span>待同步:</span>
+                            <span id="pendingCount">0</span>
+                        </div>
+                        <div class="stats-row">
+                            <span>已同步:</span>
+                            <span id="syncedCount">0</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 同步控制按鈕 -->
+                    <div class="sync-controls">
+                        <button class="btn btn-sync" id="syncBtn" onclick="manualSync()">
+                            <span id="syncBtnText">同步至雲端</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="refreshInvitationList()">重新整理</button>
+                    </div>
+                    
+                    <div class="invitation-list" id="invitationList">
+                        <div class="no-data">載入中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 編輯模態框 -->
+        <div class="edit-modal" id="editModal">
+            <div class="edit-modal-content">
+                <div class="modal-header">
+                    <div class="modal-title">編輯邀約資料</div>
+                    <button class="modal-close" onclick="closeEditModal()">&times;</button>
+                </div>
+                
+                <form id="editForm">
+                    <input type="hidden" id="editId" name="editId">
+                    
+                    <!-- 個人資訊 -->
+                    <div class="form-section">
+                        <div class="section-title">個人資訊</div>
+                        
+                        <div class="form-group">
+                            <label for="editName">姓名 *</label>
+                            <input type="text" id="editName" name="editName" required>
+                        </div>
+                        
+                        <div class="phone-group">
+                            <div class="form-group">
+                                <label for="editPhone1">電話號碼1 *</label>
+                                <input type="tel" id="editPhone1" name="editPhone1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="editPhone2">電話號碼2</label>
+                                <input type="tel" id="editPhone2" name="editPhone2">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 健檢項目 -->
+                    <div class="form-section">
+                        <div class="section-title">健檢項目</div>
+                        <div class="health-checks">
+                            <div class="checkbox-item" onclick="toggleEditCheckbox('editMammography')">
+                                <input type="checkbox" id="editMammography" name="editMammography" value="1">
+                                <label for="editMammography">乳攝</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleEditCheckbox('editFirstScreen')">
+                                <input type="checkbox" id="editFirstScreen" name="editFirstScreen" value="1">
+                                <label for="editFirstScreen">首篩</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleEditCheckbox('editCervicalSmear')">
+                                <input type="checkbox" id="editCervicalSmear" name="editCervicalSmear" value="1">
+                                <label for="editCervicalSmear">子抹</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleEditCheckbox('editAdultHealth')">
+                                <input type="checkbox" id="editAdultHealth" name="editAdultHealth" value="1">
+                                <label for="editAdultHealth">成健</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleEditCheckbox('editHepatitis')">
+                                <input type="checkbox" id="editHepatitis" name="editHepatitis" value="1">
+                                <label for="editHepatitis">BC肝炎</label>
+                            </div>
+                            <div class="checkbox-item" onclick="toggleEditCheckbox('editColorectal')">
+                                <input type="checkbox" id="editColorectal" name="editColorectal" value="1">
+                                <label for="editColorectal">大腸</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 場次資訊 -->
+                    <div class="form-section">
+                        <div class="section-title">場次資訊</div>
+                        
+                        <div class="form-group">
+                            <label for="editSessionInfo">選擇場次 *</label>
+                            <select id="editSessionInfo" name="editSessionInfo" required>
+                                <option value="">載入中...</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editSession">時段 *</label>
+                            <select id="editSession" name="editSession" required>
+                                <option value="">選擇時段</option>
+                                <option value="早上場">早上場</option>
+                                <option value="下午場">下午場</option>
+                                <option value="晚上場">晚上場</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- 備註 -->
+                    <div class="form-section">
+                        <div class="section-title">備註</div>
+                        <div class="form-group">
+                            <textarea id="editNotes" name="editNotes" rows="2" placeholder="輸入備註資訊..."></textarea>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 8px;">
+                        <button type="submit" class="btn" style="flex: 1;">更新資料</button>
+                        <button type="button" class="btn" onclick="closeEditModal()" style="flex: 1;">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
