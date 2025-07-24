@@ -3,13 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <!-- PWA 相關 meta 標籤 -->
     <meta name="theme-color" content="#4285f4">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="健檢邀約">
-    <link rel="stylesheet" href="style.css">
-    <script src="script.js"></script>
+    <meta name="description" content="健康檢查邀約管理系統 - 支援離線操作">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE0IDJINmEyIDIgMCAwIDAtMiAydjE2YTIgMiAwIDAgMCAyIDJoMTJhMiAyIDAgMCAwIDItMlY4eiIgZmlsbD0iIzQyODVmNCIvPgo8cG9seWxpbmUgcG9pbnRzPSIxNCwyIDE0LDggMjAsOCIgZmlsbD0iIzM0YTg1MyIvPgo8bGluZSB4MT0iMTYiIHkxPSIxMyIgeDI9IjgiIHkyPSIxMyIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxsaW5lIHgxPSIxNiIgeTE9IjE3IiB4Mj0iOCIgeTI9IjE3IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiLz4KPC9zdmc+">
+    
+    <!-- PWA Manifest -->
     <link rel="manifest" href="manifest.json">
+    
+    <!-- CSS 和 JS -->
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js" defer></script>
+    
     <title>健檢邀約系統</title>
 </head>
 <body>
@@ -18,6 +28,15 @@
             <h1>健檢邀約系統</h1>
             <p>請選擇邀約人員並填寫民眾資料</p>
             <div class="network-status" id="networkStatus" title="網路狀態"></div>
+        </div>
+        
+        <!-- PWA 安裝提示 -->
+        <div class="pwa-install-prompt" id="pwaInstallPrompt" style="display: none;">
+            <div class="install-prompt-content">
+                <span>📱 可以安裝此應用程式到您的裝置</span>
+                <button class="btn-install" id="installBtn">安裝</button>
+                <button class="btn-dismiss" id="dismissBtn">×</button>
+            </div>
         </div>
         
         <!-- 同步狀態提示 -->
@@ -101,59 +120,6 @@
                                 <label for="phone2">電話號碼2</label>
                                 <input type="tel" id="phone2" name="phone2">
                             </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 健檢項目 -->
-                    <div class="form-section">
-                        <div class="section-title">健檢項目</div>
-                        <div class="health-checks">
-                            <div class="checkbox-item checked" onclick="toggleCheckbox('mammography')">
-                                <input type="checkbox" id="mammography" name="mammography" value="1" checked>
-                                <label for="mammography">乳攝</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('firstScreen')">
-                                <input type="checkbox" id="firstScreen" name="firstScreen" value="1">
-                                <label for="firstScreen">首篩</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('cervicalSmear')">
-                                <input type="checkbox" id="cervicalSmear" name="cervicalSmear" value="1">
-                                <label for="cervicalSmear">子抹</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('adultHealth')">
-                                <input type="checkbox" id="adultHealth" name="adultHealth" value="1">
-                                <label for="adultHealth">成健</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('hepatitis')">
-                                <input type="checkbox" id="hepatitis" name="hepatitis" value="1">
-                                <label for="hepatitis">BC肝炎</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('colorectal')">
-                                <input type="checkbox" id="colorectal" name="colorectal" value="1">
-                                <label for="colorectal">大腸</label>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 場次資訊 -->
-                    <div class="form-section">
-                        <div class="section-title">場次資訊</div>
-                        
-                        <div class="form-group">
-                            <label for="sessionInfo">選擇場次 *</label>
-                            <select id="sessionInfo" name="sessionInfo" required onchange="checkQuotaWarning()">
-                                <option value="">載入中...</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="session">時段 *</label>
-                            <select id="session" name="session" required onchange="checkQuotaWarning()">
-                                <option value="">選擇時段</option>
-                                <option value="早上場">早上場</option>
-                                <option value="下午場">下午場</option>
-                                <option value="晚上場">晚上場</option>
-                            </select>
                         </div>
                     </div>
                     
@@ -307,5 +273,114 @@
             </div>
         </div>
     </div>
+    
+    <!-- PWA 安裝和 Service Worker 註冊腳本 -->
+    <script>
+        // Service Worker 註冊
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('Service Worker 註冊成功:', registration);
+                        
+                        // 檢查是否有更新
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // 有新版本可用
+                                    showUpdateNotification();
+                                }
+                            });
+                        });
+                    })
+                    .catch(error => {
+                        console.log('Service Worker 註冊失敗:', error);
+                    });
+                
+                // 監聽來自 Service Worker 的訊息
+                navigator.serviceWorker.addEventListener('message', event => {
+                    if (event.data.type === 'BACKGROUND_SYNC') {
+                        // 處理背景同步請求
+                        if (typeof autoSync === 'function') {
+                            autoSync();
+                        }
+                    }
+                });
+            });
+        }
+        
+        // PWA 安裝提示
+        let deferredPrompt;
+        
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // 防止預設的安裝提示
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // 顯示自訂安裝提示
+            const installPrompt = document.getElementById('pwaInstallPrompt');
+            installPrompt.style.display = 'block';
+        });
+        
+        document.getElementById('installBtn').addEventListener('click', () => {
+            const installPrompt = document.getElementById('pwaInstallPrompt');
+            installPrompt.style.display = 'none';
+            
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('用戶接受了安裝提示');
+                    }
+                    deferredPrompt = null;
+                });
+            }
+        });
+        
+        document.getElementById('dismissBtn').addEventListener('click', () => {
+            const installPrompt = document.getElementById('pwaInstallPrompt');
+            installPrompt.style.display = 'none';
+            deferredPrompt = null;
+        });
+        
+        // 檢測 PWA 是否已安裝
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA 已安裝');
+            const installPrompt = document.getElementById('pwaInstallPrompt');
+            installPrompt.style.display = 'none';
+        });
+        
+        // 顯示更新通知
+        function showUpdateNotification() {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('健檢邀約系統', {
+                    body: '有新版本可用，請重新整理頁面以更新',
+                    icon: '/icons/icon-192.png'
+                });
+            } else {
+                showSyncStatus('有新版本可用，請重新整理頁面', 'info');
+            }
+        }
+        
+        // 請求通知權限
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+        
+        // 處理 URL 參數（支援快捷方式）
+        const urlParams = new URLSearchParams(window.location.search);
+        const tab = urlParams.get('tab');
+        if (tab && typeof switchFunction === 'function') {
+            // 等待頁面完全載入後切換
+            window.addEventListener('load', () => {
+                setTimeout(() => {
+                    if (currentUser) { // 確保已登入
+                        switchFunction(tab);
+                    }
+                }, 1000);
+            });
+        }
+    </script>
 </body>
 </html>
