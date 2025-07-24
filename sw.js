@@ -5,11 +5,11 @@
 
 const CACHE_NAME = '健檢邀約系統-v1.0.0';
 const CACHE_URLS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/script.js',
-  '/manifest.json'
+  './',
+  './index.html',
+  './style.css',
+  './script.js',
+  './manifest.json'
 ];
 
 // 安裝事件 - 快取資源
@@ -128,8 +128,8 @@ self.addEventListener('fetch', event => {
             console.log('網路請求失敗:', error);
             
             // 如果是 HTML 請求且網路失敗，返回離線頁面
-            if (request.headers.get('accept').includes('text/html')) {
-              return caches.match('/index.html');
+            if (request.headers.get('accept') && request.headers.get('accept').includes('text/html')) {
+              return caches.match('./index.html');
             }
             
             throw error;
@@ -163,8 +163,8 @@ self.addEventListener('push', event => {
     const data = event.data.json();
     const options = {
       body: data.body || '您有新的邀約通知',
-      icon: '/icons/icon-192.png',
-      badge: '/icons/badge-72.png',
+      icon: './icons/icon-192.png',
+      badge: './icons/badge-72.png',
       tag: 'health-check-notification',
       requireInteraction: false,
       actions: [
@@ -191,7 +191,7 @@ self.addEventListener('notificationclick', event => {
   
   if (event.action === 'view') {
     event.waitUntil(
-      clients.openWindow('/')
+      clients.openWindow('./')
     );
   }
 });
