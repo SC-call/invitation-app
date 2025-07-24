@@ -98,11 +98,9 @@ self.addEventListener('fetch', event => {
     caches.match(request)
       .then(cachedResponse => {
         if (cachedResponse) {
-          console.log('從快取提供:', request.url);
           return cachedResponse;
         }
         
-        console.log('從網路獲取:', request.url);
         return fetch(request)
           .then(response => {
             // 確保是有效的響應

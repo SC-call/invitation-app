@@ -1388,7 +1388,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // 註冊Service Worker
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js')
+        navigator.serviceWorker.register('/sw.js')
             .then(registration => {
                 console.log('Service Worker 註冊成功:', registration);
             })
