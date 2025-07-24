@@ -1,8 +1,3 @@
-/**
- * Service Worker for 健檢邀約系統
- * 提供離線功能和資源快取
- */
-
 const CACHE_NAME = '健檢邀約系統-v1.0.0';
 const CACHE_URLS = [
   './',
