@@ -64,6 +64,15 @@ function initializeApp() {
     
     // 定期自動同步 (每5分鐘)
     setInterval(autoSync, 5 * 60 * 1000);
+    
+    // 監聽來自 Service Worker 的訊息
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', event => {
+            if (event.data && event.data.type === 'BACKGROUND_SYNC') {
+                autoSync();
+            }
+        });
+    }
 }
 
 function handleOnline() {
@@ -270,19 +279,13 @@ function updateLocalCounts() {
 }
 
 function updateCountDisplay() {
-    const morningCountEl = document.getElementById('morningCount');
-    const afternoonCountEl = document.getElementById('afternoonCount');
-    const eveningCountEl = document.getElementById('eveningCount');
-    const todayCountEl = document.getElementById('todayCount');
-    const remainingCountEl = document.getElementById('remainingCount');
-    
-    if (morningCountEl) morningCountEl.textContent = invitationCounts.morning;
-    if (afternoonCountEl) afternoonCountEl.textContent = invitationCounts.afternoon;
-    if (eveningCountEl) eveningCountEl.textContent = invitationCounts.evening;
-    if (todayCountEl) todayCountEl.textContent = invitationCounts.total;
+    document.getElementById('morningCount').textContent = invitationCounts.morning;
+    document.getElementById('afternoonCount').textContent = invitationCounts.afternoon;
+    document.getElementById('eveningCount').textContent = invitationCounts.evening;
+    document.getElementById('todayCount').textContent = invitationCounts.total;
     
     const remaining = Math.max(0, quotaLimits.total - invitationCounts.total);
-    if (remainingCountEl) remainingCountEl.textContent = remaining;
+    document.getElementById('remainingCount').textContent = remaining;
     
     updateSessionQuotaDisplay();
 }
@@ -292,28 +295,22 @@ function updateSessionQuotaDisplay() {
     const afternoonQuota = document.getElementById('afternoonQuota');
     const eveningQuota = document.getElementById('eveningQuota');
     
-    if (morningQuota) {
-        if (invitationCounts.morning >= quotaLimits.morning && quotaLimits.morning > 0) {
-            morningQuota.classList.add('full');
-        } else {
-            morningQuota.classList.remove('full');
-        }
+    if (invitationCounts.morning >= quotaLimits.morning && quotaLimits.morning > 0) {
+        morningQuota.classList.add('full');
+    } else {
+        morningQuota.classList.remove('full');
     }
     
-    if (afternoonQuota) {
-        if (invitationCounts.afternoon >= quotaLimits.afternoon && quotaLimits.afternoon > 0) {
-            afternoonQuota.classList.add('full');
-        } else {
-            afternoonQuota.classList.remove('full');
-        }
+    if (invitationCounts.afternoon >= quotaLimits.afternoon && quotaLimits.afternoon > 0) {
+        afternoonQuota.classList.add('full');
+    } else {
+        afternoonQuota.classList.remove('full');
     }
     
-    if (eveningQuota) {
-        if (invitationCounts.evening >= quotaLimits.evening && quotaLimits.evening > 0) {
-            eveningQuota.classList.add('full');
-        } else {
-            eveningQuota.classList.remove('full');
-        }
+    if (invitationCounts.evening >= quotaLimits.evening && quotaLimits.evening > 0) {
+        eveningQuota.classList.add('full');
+    } else {
+        eveningQuota.classList.remove('full');
     }
 }
 
@@ -335,13 +332,9 @@ function updateLocalStats() {
         }
     });
     
-    const localCountEl = document.getElementById('localCount');
-    const pendingCountEl = document.getElementById('pendingCount');
-    const syncedCountEl = document.getElementById('syncedCount');
-    
-    if (localCountEl) localCountEl.textContent = localCount;
-    if (pendingCountEl) pendingCountEl.textContent = pendingCount;
-    if (syncedCountEl) syncedCountEl.textContent = syncedCount;
+    document.getElementById('localCount').textContent = localCount;
+    document.getElementById('pendingCount').textContent = pendingCount;
+    document.getElementById('syncedCount').textContent = syncedCount;
 }
 
 // ============ Google Apps Script API 呼叫 ============
@@ -354,20 +347,16 @@ function callGoogleScript(functionName, data = {}) {
             parameters: data
         };
         
-        // 使用 FormData 格式
+        // 方法1: 使用 FormData（推薦）
         const formData = new FormData();
         formData.append('data', JSON.stringify(payload));
         
         fetch(GOOGLE_SCRIPT_URL, {
             method: 'POST',
-            body: formData,
-            mode: 'cors'  // 明確設定 CORS 模式
+            body: formData
         })
         .then(response => {
             console.log('收到回應:', response.status, response.statusText);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
             return response.text(); // 先以文字格式讀取
         })
         .then(text => {
@@ -409,7 +398,7 @@ function safeGoogleScriptCall(functionName, successCallback, errorCallback, ...a
             if (errorCallback) errorCallback(error.toString());
         }
     } else {
-        // 在外部環境中，使用fetch呼叫
+        // 在GitHub部署環境中，使用fetch呼叫
         const data = args.length > 0 ? args[0] : {};
         
         callGoogleScript(functionName, data)
@@ -467,9 +456,8 @@ function syncToCloud(invitations) {
     
     const syncBtn = document.getElementById('syncBtn');
     const syncBtnText = document.getElementById('syncBtnText');
-    
-    if (syncBtn) syncBtn.disabled = true;
-    if (syncBtnText) syncBtnText.innerHTML = '<div class="loading-spinner"></div>同步中...';
+    syncBtn.disabled = true;
+    syncBtnText.innerHTML = '<div class="loading-spinner"></div>同步中...';
     
     // 標記為同步中
     invitations.forEach(function(inv) {
@@ -532,9 +520,8 @@ function finishSync() {
     
     const syncBtn = document.getElementById('syncBtn');
     const syncBtnText = document.getElementById('syncBtnText');
-    
-    if (syncBtn) syncBtn.disabled = false;
-    if (syncBtnText) syncBtnText.textContent = '同步至雲端';
+    syncBtn.disabled = false;
+    syncBtnText.textContent = '同步至雲端';
     
     const syncedCount = localInvitations.filter(inv => inv.syncStatus === SYNC_STATUS.SYNCED).length;
     const errorCount = localInvitations.filter(inv => inv.syncStatus === SYNC_STATUS.ERROR).length;
@@ -560,22 +547,19 @@ function convertToServerFormat(invitation) {
         sessionInfo: invitation.sessionInfo,
         session: invitation.session,
         notes: invitation.notes,
-        inviter: invitation.inviter,
-        localId: invitation.localId
+        inviter: invitation.inviter
     };
 }
 
 function showSyncStatus(message, type) {
     const syncStatus = document.getElementById('syncStatus');
-    if (syncStatus) {
-        syncStatus.className = 'sync-status show ' + (type || 'info');
-        syncStatus.textContent = message;
-        
-        if (type === 'success' || type === 'warning') {
-            setTimeout(function() {
-                syncStatus.classList.remove('show');
-            }, 3000);
-        }
+    syncStatus.className = 'sync-status show ' + (type || 'info');
+    syncStatus.textContent = message;
+    
+    if (type === 'success' || type === 'warning') {
+        setTimeout(function() {
+            syncStatus.classList.remove('show');
+        }, 3000);
     }
 }
 
@@ -585,17 +569,15 @@ function loadUserList() {
         'getUserList',
         function(users) {
             const select = document.getElementById('staffSelect');
-            if (select) {
-                select.innerHTML = '<option value="">選擇邀約人員</option>';
-                
-                for (let i = 0; i < users.length; i++) {
-                    const user = users[i];
-                    const option = document.createElement('option');
-                    option.value = user.name;
-                    option.textContent = user.name;
-                    option.dataset.hasPassword = user.hasPassword;
-                    select.appendChild(option);
-                }
+            select.innerHTML = '<option value="">選擇邀約人員</option>';
+            
+            for (let i = 0; i < users.length; i++) {
+                const user = users[i];
+                const option = document.createElement('option');
+                option.value = user.name;
+                option.textContent = user.name;
+                option.dataset.hasPassword = user.hasPassword;
+                select.appendChild(option);
             }
         },
         function(error) {
@@ -621,17 +603,15 @@ function loadSessionOptions(staffName) {
 
 function updateSessionSelect(selectId, sessions) {
     const select = document.getElementById(selectId);
-    if (select) {
-        select.innerHTML = '<option value="">選擇場次</option>';
-        
-        for (let i = 0; i < sessions.length; i++) {
-            const session = sessions[i];
-            const option = document.createElement('option');
-            option.value = session.value;
-            option.textContent = session.display;
-            option.dataset.appointmentType = session.appointmentType;
-            select.appendChild(option);
-        }
+    select.innerHTML = '<option value="">選擇場次</option>';
+    
+    for (let i = 0; i < sessions.length; i++) {
+        const session = sessions[i];
+        const option = document.createElement('option');
+        option.value = session.value;
+        option.textContent = session.display;
+        option.dataset.appointmentType = session.appointmentType;
+        select.appendChild(option);
     }
 }
 
@@ -683,7 +663,8 @@ function login() {
         function(error) {
             showAlert('error', '登入失敗：' + error);
         },
-        { username: staffName, password: password }
+        staffName,
+        password
     );
 }
 
@@ -695,16 +676,14 @@ function updateUserInterface() {
     const functionTabs = document.getElementById('functionTabs');
     const mainContent = document.getElementById('mainContent');
     
-    if (userInfo) {
-        userInfo.classList.add('logged-in');
-        userInfo.innerHTML = '<div><div class="user-name">' + currentUser.name + '</div></div>';
-    }
+    userInfo.classList.add('logged-in');
+    userInfo.innerHTML = '<div><div class="user-name">' + currentUser.name + '</div></div>';
     
-    if (loginForm) loginForm.style.display = 'none';
-    if (quotaInfo) quotaInfo.style.display = 'grid';
-    if (sessionQuotas) sessionQuotas.style.display = 'grid';
-    if (functionTabs) functionTabs.style.display = 'flex';
-    if (mainContent) mainContent.style.display = 'block';
+    loginForm.style.display = 'none';
+    quotaInfo.style.display = 'grid';
+    sessionQuotas.style.display = 'grid';
+    functionTabs.style.display = 'flex';
+    mainContent.style.display = 'block';
 }
 
 function loadTodayData() {
@@ -718,15 +697,10 @@ function loadTodayData() {
         'getTodayQuota',
         function(quota) {
             quotaLimits = quota;
-            const morningLimitEl = document.getElementById('morningLimit');
-            const afternoonLimitEl = document.getElementById('afternoonLimit');
-            const eveningLimitEl = document.getElementById('eveningLimit');
-            const todayLimitEl = document.getElementById('todayLimit');
-            
-            if (morningLimitEl) morningLimitEl.textContent = quota.morning;
-            if (afternoonLimitEl) afternoonLimitEl.textContent = quota.afternoon;
-            if (eveningLimitEl) eveningLimitEl.textContent = quota.evening;
-            if (todayLimitEl) todayLimitEl.textContent = quota.total;
+            document.getElementById('morningLimit').textContent = quota.morning;
+            document.getElementById('afternoonLimit').textContent = quota.afternoon;
+            document.getElementById('eveningLimit').textContent = quota.evening;
+            document.getElementById('todayLimit').textContent = quota.total;
             
             // 更新顯示
             updateCountDisplay();
@@ -734,7 +708,8 @@ function loadTodayData() {
         function(error) {
             console.error('載入限額失敗:', error);
         },
-        { staffName: currentUser.name, date: todayStr }
+        currentUser.name,
+        todayStr
     );
 }
 
@@ -777,8 +752,8 @@ function checkQuotaWarning() {
     const sessionInfo = document.getElementById('sessionInfo').value;
     const warningDiv = document.getElementById('quotaWarning');
     
-    if (!session || !sessionInfo || !warningDiv) {
-        if (warningDiv) warningDiv.style.display = 'none';
+    if (!session || !sessionInfo) {
+        warningDiv.style.display = 'none';
         return;
     }
     
@@ -819,18 +794,10 @@ function switchFunction(func) {
     for (let i = 0; i < tabs.length; i++) {
         tabs[i].classList.remove('active');
     }
+    event.target.classList.add('active');
     
-    // 找到被點擊的按鈕
-    const activeTab = document.querySelector('.tab-btn[onclick*="' + func + '"]');
-    if (activeTab) {
-        activeTab.classList.add('active');
-    }
-    
-    const inviteSection = document.getElementById('inviteSection');
-    const listSection = document.getElementById('listSection');
-    
-    if (inviteSection) inviteSection.style.display = func === 'invite' ? 'block' : 'none';
-    if (listSection) listSection.style.display = func === 'list' ? 'block' : 'none';
+    document.getElementById('inviteSection').style.display = func === 'invite' ? 'block' : 'none';
+    document.getElementById('listSection').style.display = func === 'list' ? 'block' : 'none';
     
     if (func === 'list') {
         refreshInvitationList();
@@ -846,7 +813,6 @@ function refreshInvitationList() {
 
 function loadInvitationList() {
     const listContainer = document.getElementById('invitationList');
-    if (!listContainer) return;
     
     // 直接從本地資料載入
     const todayStr = getTodayString('MMDD');
@@ -882,7 +848,7 @@ function renderInvitationItem(invitation) {
                 '<div class="invitation-name">' + invitation.name + 
                 ' <span class="appointment-type-tag ' + appointmentTypeClass + '">' + invitation.appointmentType + '</span></div>' +
                 '<div class="invitation-phone">' + invitation.phone1 + '</div>' +
-                (currentUser && currentUser.name === '系統管理員' ? '<div style="font-size: 0.75em; color: #666;">邀約人：' + invitation.inviter + '</div>' : '') +
+                (currentUser.name === '系統管理員' ? '<div style="font-size: 0.75em; color: #666;">邀約人：' + invitation.inviter + '</div>' : '') +
             '</div>' +
             '<div class="invitation-actions">' +
                 '<button class="btn-small btn-edit" onclick="editInvitation(\'' + invitation.localId + '\')">編輯</button>' +
@@ -1007,11 +973,8 @@ function handleSubmit(e) {
 function submitInvitation(data) {
     const submitBtn = document.getElementById('submitBtn');
     
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = '提交中...';
-    }
-    
+    submitBtn.disabled = true;
+    submitBtn.textContent = '提交中...';
     showSubmitStatus('processing', '正在儲存邀約資料...');
     
     try {
@@ -1031,35 +994,33 @@ function submitInvitation(data) {
     } catch (error) {
         showSubmitStatus('error', '儲存失敗：' + error.toString());
     } finally {
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = '提交邀約資料';
-        }
+        submitBtn.disabled = false;
+        submitBtn.textContent = '提交邀約資料';
     }
 }
 
 function resetForm() {
-    const elements = ['name', 'phone1', 'phone2', 'notes', 'sessionInfo', 'session'];
-    elements.forEach(id => {
-        const element = document.getElementById(id);
-        if (element) element.value = '';
-    });
+    document.getElementById('name').value = '';
+    document.getElementById('phone1').value = '';
+    document.getElementById('phone2').value = '';
+    document.getElementById('notes').value = '';
+    document.getElementById('sessionInfo').value = '';
+    document.getElementById('session').value = '';
     
     const checkboxItems = document.querySelectorAll('#inviteSection .checkbox-item');
     for (let i = 0; i < checkboxItems.length; i++) {
         const item = checkboxItems[i];
         const checkbox = item.querySelector('input');
-        if (checkbox && checkbox.id === 'mammography') {
+        if (checkbox.id === 'mammography') {
             checkbox.checked = true;
             item.classList.add('checked');
-        } else if (checkbox) {
+        } else {
             checkbox.checked = false;
             item.classList.remove('checked');
         }
     }
     
-    const quotaWarning = document.getElementById('quotaWarning');
-    if (quotaWarning) quotaWarning.style.display = 'none';
+    document.getElementById('quotaWarning').style.display = 'none';
 }
 
 // ============ 編輯功能 ============
@@ -1069,20 +1030,13 @@ function editInvitation(localId) {
     
     editingInvitation = invitation;
     
-    const elements = {
-        'editId': invitation.localId,
-        'editName': invitation.name,
-        'editPhone1': invitation.phone1,
-        'editPhone2': invitation.phone2 || '',
-        'editSession': invitation.session,
-        'editNotes': invitation.notes || '',
-        'editSessionInfo': invitation.sessionInfo
-    };
-    
-    Object.keys(elements).forEach(id => {
-        const element = document.getElementById(id);
-        if (element) element.value = elements[id];
-    });
+    document.getElementById('editId').value = invitation.localId;
+    document.getElementById('editName').value = invitation.name;
+    document.getElementById('editPhone1').value = invitation.phone1;
+    document.getElementById('editPhone2').value = invitation.phone2 || '';
+    document.getElementById('editSession').value = invitation.session;
+    document.getElementById('editNotes').value = invitation.notes || '';
+    document.getElementById('editSessionInfo').value = invitation.sessionInfo;
     
     setEditCheckbox('editMammography', invitation.mammography);
     setEditCheckbox('editFirstScreen', invitation.firstScreen);
@@ -1091,23 +1045,18 @@ function editInvitation(localId) {
     setEditCheckbox('editHepatitis', invitation.hepatitis);
     setEditCheckbox('editColorectal', invitation.colorectal);
     
-    const editModal = document.getElementById('editModal');
-    if (editModal) editModal.style.display = 'flex';
+    document.getElementById('editModal').style.display = 'flex';
 }
 
 function setEditCheckbox(checkboxId, value) {
     const checkbox = document.getElementById(checkboxId);
-    if (!checkbox) return;
-    
     const item = checkbox.closest('.checkbox-item');
     
     checkbox.checked = value === 1 || value === true;
-    if (item) {
-        if (checkbox.checked) {
-            item.classList.add('checked');
-        } else {
-            item.classList.remove('checked');
-        }
+    if (checkbox.checked) {
+        item.classList.add('checked');
+    } else {
+        item.classList.remove('checked');
     }
 }
 
@@ -1172,8 +1121,7 @@ function handleEditSubmit(e) {
 }
 
 function closeEditModal() {
-    const editModal = document.getElementById('editModal');
-    if (editModal) editModal.style.display = 'none';
+    document.getElementById('editModal').style.display = 'none';
     editingInvitation = null;
 }
 
@@ -1191,63 +1139,51 @@ function deleteInvitation(localId) {
 // ============ UI互動功能 ============
 function toggleCheckbox(checkboxId) {
     const checkbox = document.getElementById(checkboxId);
-    if (!checkbox) return;
-    
     const item = checkbox.closest('.checkbox-item');
     
     checkbox.checked = !checkbox.checked;
     
-    if (item) {
-        if (checkbox.checked) {
-            item.classList.add('checked');
-        } else {
-            item.classList.remove('checked');
-        }
+    if (checkbox.checked) {
+        item.classList.add('checked');
+    } else {
+        item.classList.remove('checked');
     }
 }
 
 function toggleEditCheckbox(checkboxId) {
     const checkbox = document.getElementById(checkboxId);
-    if (!checkbox) return;
-    
     const item = checkbox.closest('.checkbox-item');
     
     checkbox.checked = !checkbox.checked;
     
-    if (item) {
-        if (checkbox.checked) {
-            item.classList.add('checked');
-        } else {
-            item.classList.remove('checked');
-        }
+    if (checkbox.checked) {
+        item.classList.add('checked');
+    } else {
+        item.classList.remove('checked');
     }
 }
 
 function showAlert(type, message) {
     const alert = document.getElementById('alertMessage');
-    if (alert) {
-        alert.className = 'alert ' + type;
-        alert.textContent = message;
-        alert.style.display = 'block';
-        
-        setTimeout(function() {
-            alert.style.display = 'none';
-        }, 3000);
-    }
+    alert.className = 'alert ' + type;
+    alert.textContent = message;
+    alert.style.display = 'block';
+    
+    setTimeout(function() {
+        alert.style.display = 'none';
+    }, 3000);
 }
 
 function showSubmitStatus(type, message) {
     const status = document.getElementById('submitStatus');
-    if (status) {
-        status.className = 'submit-status ' + type;
-        status.textContent = message;
-        status.style.display = 'block';
-        
-        if (type !== 'processing') {
-            setTimeout(function() {
-                status.style.display = 'none';
-            }, 3000);
-        }
+    status.className = 'submit-status ' + type;
+    status.textContent = message;
+    status.style.display = 'block';
+    
+    if (type !== 'processing') {
+        setTimeout(function() {
+            status.style.display = 'none';
+        }, 3000);
     }
 }
 
@@ -1261,21 +1197,15 @@ function updateInvitationListDisplay() {
 document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
     
-    const invitationForm = document.getElementById('invitationForm');
-    const editForm = document.getElementById('editForm');
-    
-    if (invitationForm) invitationForm.addEventListener('submit', handleSubmit);
-    if (editForm) editForm.addEventListener('submit', handleEditSubmit);
+    document.getElementById('invitationForm').addEventListener('submit', handleSubmit);
+    document.getElementById('editForm').addEventListener('submit', handleEditSubmit);
     
     // 模態框點擊背景關閉
-    const editModal = document.getElementById('editModal');
-    if (editModal) {
-        editModal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeEditModal();
-            }
-        });
-    }
+    document.getElementById('editModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeEditModal();
+        }
+    });
 });
 
 // ============ PWA功能 ============
