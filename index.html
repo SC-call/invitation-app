@@ -18,8 +18,8 @@
     <link rel="manifest" href="manifest.json">
     
     <!-- CSS 和 JS -->
-    <!-- <link rel="stylesheet" href="style.css">
-    <script src="script.js" defer></script> -->
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js" defer></script>
     
     <title>健檢邀約系統</title>
 </head>
@@ -280,7 +280,7 @@
         // Service Worker 註冊
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/invitation-app1/sw.js')
+                navigator.serviceWorker.register('/invitation-app/sw.js')
                     .then(registration => {
                         console.log('Service Worker 註冊成功:', registration);
                         
