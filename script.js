@@ -1,1433 +1,1284 @@
-// 修正後的健檢邀約系統前端 JavaScript
-// 更新您的 Google Apps Script 部署 URL
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxhkCskd6Emdr6Nu77sKGCjdsRdgoOX5YPnpgtrK_RXRLBhLGv5HgQ4r-PP-a4_CTB/exec';
+/**
+ * Google Apps Script - 健檢邀約系統 PWA 版本 (GMT+8)
+ * 修正版本 - 所有時間戳記改為 GMT+8
+ */
 
-
-// 全域變數
-var currentUser = null;
-var currentFunction = 'invite';
-var editingInvitation = null;
-var sessionOptions = [];
-var isOnline = navigator.onLine;
-var syncInProgress = false;
-
-// 本地邀約資料列表
-var localInvitations = [];
-
-// 邀約計數 (從本地資料計算)
-var invitationCounts = {
-    morning: 0,
-    afternoon: 0,
-    evening: 0,
-    total: 0
-};
-
-var quotaLimits = {
-    morning: 0,
-    afternoon: 0,
-    evening: 0,
-    total: 0
-};
-
-// 本地儲存鍵名
-const STORAGE_KEYS = {
-    INVITATIONS: 'health_check_invitations',
-    USER: 'health_check_current_user',
-    LAST_SYNC: 'health_check_last_sync'
-};
-
-// 邀約狀態枚舉
-const SYNC_STATUS = {
-    PENDING: 'pending',
-    SYNCING: 'syncing', 
-    SYNCED: 'synced',
-    ERROR: 'error'
-};
-
-// ============ 初始化和事件監聽 ============
-function initializeApp() {
-    console.log('初始化應用程式...');
+// 配置部分 - 請更新為您的實際文件ID
+const CONFIG = {
+    // Google Drive 中的JSON文件ID
+    ACCOUNT_FILE_ID: '1bCSMTR0D2MsJKwxKlXnPxkkj9qCyj3N1',
+    SCHEDULE_FILE_ID: '13HgAFzHCmh0UA8V69OpHqKQKXjcvFoZm',
     
-    // 載入本地資料
-    loadLocalData();
+    // Google Sheets ID - 用於儲存邀約資料
+    INVITATION_SHEET_ID: '1uJZuDmY1NtrveJBGs1EAtvIagodnolDhH2GXByK0VaI'
+  };
+  
+  // ============ GMT+8 時間處理函數 ============
+  /**
+   * 獲取 GMT+8 時間戳記
+   */
+  function getGMT8Timestamp() {
+      const now = new Date();
+      // 使用 Google Apps Script 的時區處理，設定為台北時區
+      return Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd\'T\'HH:mm:ss.SSS\'Z\'');
+  }
+  
+  /**
+   * 獲取 GMT+8 的今日字串
+   */
+  function getTodayStringGMT8(format) {
+      const now = new Date();
+      
+      if (format === 'MMDD') {
+          return Utilities.formatDate(now, 'Asia/Taipei', 'MMdd');
+      }
+      return Utilities.formatDate(now, 'Asia/Taipei', 'yyyyMMdd');
+  }
+  
+  /**
+   * 獲取 GMT+8 的年份
+   */
+  function getYearGMT8() {
+      const now = new Date();
+      return Utilities.formatDate(now, 'Asia/Taipei', 'yyyy');
+  }
+  
+  /**
+   * 建立 CORS 回應 - 統一的標頭設定函數
+   */
+  function createCORSResponse(content, mimeType) {
+    const output = ContentService
+      .createTextOutput(content)
+      .setMimeType(mimeType || ContentService.MimeType.JSON);
+      
+    return output;
+  }
+  
+  /**
+   * 處理 OPTIONS 請求 - CORS 預檢請求 (必須存在!)
+   */
+  function doOptions(e) {
+    console.log('收到 OPTIONS 請求');
+    return createCORSResponse('', ContentService.MimeType.TEXT);
+  }
+  
+  /**
+   * 處理 GET 請求 - 用於測試連接
+   */
+  function doGet(e) {
+    console.log('收到 GET 請求:', e);
     
-    // 監聽網路狀態變化
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    
-    // 更新網路狀態顯示
-    updateNetworkStatus();
-    
-    // 載入用戶列表
-    loadUserList();
-    
-    // 如果有已登入用戶，自動登入
-    if (currentUser) {
-        console.log('發現已登入用戶:', currentUser.name);
-        updateUserInterface();
-        loadTodayData();
-        loadSessionOptions(currentUser.name);
-    }
-    
-    // 定期自動同步 (每5分鐘)
-    setInterval(autoSync, 5 * 60 * 1000);
-    
-    // 監聽來自 Service Worker 的訊息
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.addEventListener('message', event => {
-            if (event.data && event.data.type === 'BACKGROUND_SYNC') {
-                autoSync();
-            }
-        });
-    }
-    
-    console.log('應用程式初始化完成');
-}
-
-function handleOnline() {
-    isOnline = true;
-    updateNetworkStatus();
-    showSyncStatus('網路已連接，將自動同步資料', 'success');
-    setTimeout(autoSync, 2000); // 2秒後開始同步
-}
-
-function handleOffline() {
-    isOnline = false;
-    updateNetworkStatus();
-    showSyncStatus('網路已中斷，將使用離線模式', 'warning');
-}
-
-function updateNetworkStatus() {
-    const indicator = document.getElementById('networkStatus');
-    if (!indicator) return;
-    
-    if (syncInProgress) {
-        indicator.className = 'network-status syncing';
-        indicator.title = '同步中...';
-    } else if (isOnline) {
-        indicator.className = 'network-status';
-        indicator.title = '網路已連接';
-    } else {
-        indicator.className = 'network-status offline';
-        indicator.title = '離線模式';
-    }
-}
-
-// ============ 本地資料管理 ============
-function loadLocalData() {
     try {
-        // 載入邀約資料
-        const savedInvitations = localStorage.getItem(STORAGE_KEYS.INVITATIONS);
-        if (savedInvitations) {
-            localInvitations = JSON.parse(savedInvitations);
-            console.log('載入本地邀約資料:', localInvitations.length, '筆');
-        }
-        
-        // 載入當前用戶
-        const savedUser = localStorage.getItem(STORAGE_KEYS.USER);
-        if (savedUser) {
-            currentUser = JSON.parse(savedUser);
-            console.log('載入已登入用戶:', currentUser.name);
-        }
-        
-        // 更新計數
-        updateLocalCounts();
+      const response = {
+        success: true,
+        message: 'Google Apps Script API 運行正常',
+        timestamp: getGMT8Timestamp(),
+        version: '2.1.0-GMT8',
+        method: 'GET',
+        timezone: 'GMT+8 (Asia/Taipei)'
+      };
+      
+      return createCORSResponse(JSON.stringify(response));
         
     } catch (error) {
-        console.error('載入本地資料失敗:', error);
-        localInvitations = [];
-        currentUser = null;
+      console.error('doGet 錯誤:', error);
+      
+      const errorResponse = {
+        success: false,
+        error: error.toString(),
+        message: 'GET 請求處理失敗',
+        timestamp: getGMT8Timestamp()
+      };
+      
+      return createCORSResponse(JSON.stringify(errorResponse));
     }
-}
-
-function saveLocalData() {
+  }
+  
+  /**
+   * 處理 POST 請求 - PWA 專用
+   */
+  function doPost(e) {
+    console.log('收到 POST 請求:', e);
+    
     try {
-        localStorage.setItem(STORAGE_KEYS.INVITATIONS, JSON.stringify(localInvitations));
-        if (currentUser) {
-            localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
+      // 解析請求資料
+      let requestData;
+      
+      if (e.postData && e.postData.contents) {
+        // JSON 格式請求
+        try {
+          requestData = JSON.parse(e.postData.contents);
+        } catch (parseError) {
+          console.error('JSON 解析失敗:', parseError);
+          throw new Error('無法解析 JSON 請求內容');
         }
-        localStorage.setItem(STORAGE_KEYS.LAST_SYNC, new Date().toISOString());
+      } else if (e.parameter && e.parameter.data) {
+        // FormData 格式請求
+        try {
+          requestData = JSON.parse(e.parameter.data);
+        } catch (parseError) {
+          console.error('FormData 解析失敗:', parseError);
+          throw new Error('無法解析 FormData 請求內容');
+        }
+      } else {
+        // 如果沒有請求資料，返回基本資訊
+        const basicResponse = {
+          success: true,
+          message: 'POST 請求已接收，但沒有資料',
+          timestamp: getGMT8Timestamp(),
+          timezone: 'GMT+8 (Asia/Taipei)',
+          availableFunctions: [
+            'getUserList', 'authenticateUser', 'getSessionOptions',
+            'getTodayQuota', 'getTodayInvitations', 'submitInvitation',
+            'batchSubmitInvitations', 'updateInvitation', 'deleteInvitation',
+            'getTodayInvitationList', 'testConnection'
+          ]
+        };
+        
+        return createCORSResponse(JSON.stringify(basicResponse));
+      }
+      
+      console.log('解析後的資料:', requestData);
+      
+      const functionName = requestData.function || 'testConnection';
+      const parameters = requestData.parameters || {};
+      
+      let result;
+      
+      // 路由到對應的函數
+      switch (functionName) {
+        case 'getUserList':
+          result = getUserList();
+          break;
+        case 'authenticateUser':
+          result = authenticateUser(parameters.username, parameters.password);
+          break;
+        case 'getSessionOptions':
+          result = getSessionOptions(parameters.staffName);
+          break;
+        case 'getTodayQuota':
+          result = getTodayQuota(parameters.staffName, parameters.date);
+          break;
+        case 'getTodayInvitations':
+          result = getTodayInvitations(parameters.inviter, parameters.date);
+          break;
+        case 'submitInvitation':
+          result = submitInvitation(parameters);
+          break;
+        case 'batchSubmitInvitations':
+          result = batchSubmitInvitations(parameters.invitations);
+          break;
+        case 'updateInvitation':
+          result = updateInvitation(parameters);
+          break;
+        case 'deleteInvitation':
+          result = deleteInvitation(parameters.id);
+          break;
+        case 'getTodayInvitationList':
+          result = getTodayInvitationList(parameters.inviter, parameters.date);
+          break;
+        case 'testConnection':
+          result = testConnection();
+          break;
+        default:
+          result = { 
+            success: false,
+            error: '未知的函數名稱: ' + functionName,
+            availableFunctions: [
+              'getUserList', 'authenticateUser', 'getSessionOptions',
+              'getTodayQuota', 'getTodayInvitations', 'submitInvitation',
+              'batchSubmitInvitations', 'updateInvitation', 'deleteInvitation',
+              'getTodayInvitationList', 'testConnection'
+            ]
+          };
+      }
+      
+      console.log('執行結果:', result);
+      
+      // 返回結果
+      return createCORSResponse(JSON.stringify(result));
+        
     } catch (error) {
-        console.error('儲存本地資料失敗:', error);
-        showAlert('error', '本地儲存失敗，請檢查儲存空間');
+      console.error('doPost 錯誤:', error);
+      
+      const errorResponse = { 
+        success: false,
+        error: error.toString(),
+        message: '服務器處理錯誤',
+        timestamp: getGMT8Timestamp()
+      };
+      
+      return createCORSResponse(JSON.stringify(errorResponse));
     }
-}
-
-function addInvitationToLocal(invitationData) {
-    // 生成本地ID
-    const localId = 'LOCAL_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    
-    const invitation = {
-        id: localId,
-        localId: localId, // 本地唯一標識
-        serverId: null, // 服務器ID，同步後填入
-        syncStatus: SYNC_STATUS.PENDING,
-        syncError: null,
-        createTime: new Date().toISOString(),
-        lastModified: new Date().toISOString(),
-        
-        // 邀約資料
-        name: invitationData.name,
-        phone1: invitationData.phone1,
-        phone2: invitationData.phone2 || '',
-        mammography: invitationData.mammography ? 1 : 0,
-        firstScreen: invitationData.firstScreen ? 1 : 0,
-        cervicalSmear: invitationData.cervicalSmear ? 1 : 0,
-        adultHealth: invitationData.adultHealth ? 1 : 0,
-        hepatitis: invitationData.hepatitis ? 1 : 0,
-        colorectal: invitationData.colorectal ? 1 : 0,
-        notes: invitationData.notes || '',
-        sessionInfo: invitationData.sessionInfo,
-        session: invitationData.session,
-        inviter: invitationData.inviter,
-        
-        // 解析場次資訊
-        ...parseSessionInfo(invitationData.sessionInfo),
-        
-        // 邀約日期
-        inviteDate: getTodayString('MMDD')
-    };
-    
-    localInvitations.unshift(invitation); // 加到開頭
-    saveLocalData();
-    updateLocalCounts();
-    updateLocalStats();
-    
-    console.log('新增本地邀約:', invitation.name);
-    return invitation;
-}
-
-function updateInvitationInLocal(localId, updateData) {
-    const index = localInvitations.findIndex(inv => inv.localId === localId);
-    if (index === -1) return false;
-    
-    const invitation = localInvitations[index];
-    
-    // 更新資料
-    Object.assign(invitation, updateData, {
-        lastModified: new Date().toISOString(),
-        syncStatus: invitation.syncStatus === SYNC_STATUS.SYNCED ? SYNC_STATUS.PENDING : invitation.syncStatus
-    });
-    
-    // 重新解析場次資訊
-    if (updateData.sessionInfo) {
-        Object.assign(invitation, parseSessionInfo(updateData.sessionInfo));
+  }
+  
+  /**
+   * 測試連接 - 供 PWA 檢查 API 狀態
+   */
+  function testConnection() {
+    try {
+      // 簡單測試各個組件
+      let status = 'healthy';
+      const checks = {};
+      
+      // 測試 Drive 文件存取
+      try {
+        readJsonFromDrive(CONFIG.ACCOUNT_FILE_ID);
+        checks.accountFile = 'OK';
+      } catch (error) {
+        checks.accountFile = 'FAILED: ' + error.message;
+        status = 'unhealthy';
+      }
+      
+      try {
+        readJsonFromDrive(CONFIG.SCHEDULE_FILE_ID);
+        checks.scheduleFile = 'OK';
+      } catch (error) {
+        checks.scheduleFile = 'FAILED: ' + error.message;
+        status = 'unhealthy';
+      }
+      
+      // 測試 Sheets 存取
+      try {
+        getInvitationSheet();
+        checks.invitationSheet = 'OK';
+      } catch (error) {
+        checks.invitationSheet = 'FAILED: ' + error.message;
+        status = 'unhealthy';
+      }
+      
+      return {
+        success: true,
+        message: 'API 連接測試完成',
+        status: status,
+        timestamp: getGMT8Timestamp(),
+        timezone: 'GMT+8 (Asia/Taipei)',
+        version: '2.1.0-GMT8',
+        checks: checks
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.toString(),
+        message: 'API 連接測試失敗',
+        timestamp: getGMT8Timestamp()
+      };
     }
-    
-    saveLocalData();
-    updateLocalCounts();
-    updateLocalStats();
-    
-    console.log('更新本地邀約:', invitation.name);
-    return true;
-}
-
-function deleteInvitationFromLocal(localId) {
-    const index = localInvitations.findIndex(inv => inv.localId === localId);
-    if (index === -1) return false;
-    
-    const invitation = localInvitations[index];
-    localInvitations.splice(index, 1);
-    saveLocalData();
-    updateLocalCounts();
-    updateLocalStats();
-    
-    console.log('刪除本地邀約:', invitation.name);
-    return true;
-}
-
-function parseSessionInfo(sessionInfo) {
-    const parts = sessionInfo.split('-');
-    if (parts.length >= 4) {
+  }
+  
+  /**
+   * 從Google Drive讀取JSON文件
+   */
+  function readJsonFromDrive(fileId) {
+    try {
+      const file = DriveApp.getFileById(fileId);
+      const content = file.getBlob().getDataAsString();
+      return JSON.parse(content);
+    } catch (error) {
+      console.error('讀取JSON文件失敗:', error);
+      throw new Error('無法讀取配置文件 ' + fileId + ': ' + error.toString());
+    }
+  }
+  
+  /**
+   * 寫入JSON文件到Google Drive
+   */
+  function writeJsonToDrive(fileId, data) {
+    try {
+      const file = DriveApp.getFileById(fileId);
+      const jsonString = JSON.stringify(data, null, 2);
+      file.setContent(jsonString);
+      return true;
+    } catch (error) {
+      console.error('寫入JSON文件失敗:', error);
+      throw new Error('無法寫入配置文件 ' + fileId + ': ' + error.toString());
+    }
+  }
+  
+  /**
+   * 取得邀約資料工作表
+   */
+  function getInvitationSheet() {
+    try {
+      const spreadsheet = SpreadsheetApp.openById(CONFIG.INVITATION_SHEET_ID);
+      return spreadsheet.getActiveSheet();
+    } catch (error) {
+      console.error('無法開啟邀約工作表:', error);
+      throw new Error('無法連接到資料庫 ' + CONFIG.INVITATION_SHEET_ID + ': ' + error.toString());
+    }
+  }
+  
+  /**
+   * 初始化邀約工作表
+   */
+  function initializeInvitationSheet() {
+    try {
+      const sheet = getInvitationSheet();
+      
+      // 檢查是否已經初始化
+      if (sheet.getLastRow() > 0) {
+        const firstRow = sheet.getRange(1, 1, 1, Math.min(sheet.getLastColumn(), 22)).getValues()[0];
+        if (firstRow[0] === 'ID') {
+          console.log('工作表已經初始化');
+          return true; // 已初始化
+        }
+      }
+      
+      console.log('初始化工作表標題列');
+      
+      const headers = [
+        'ID', '姓名', '電話1', '電話2', '乳攝', '首篩', '子抹', '成健', 
+        'BC肝炎', '大腸', '備註', '年份', '日期', '地區', '地點', '場次', 
+        '邀約人員', '邀約日期', '約別', '建立時間', '最後修改時間', '本地ID'
+      ];
+      
+      // 清除現有內容並設定標題
+      sheet.clear();
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      
+      // 設定標題樣式
+      const headerRange = sheet.getRange(1, 1, 1, headers.length);
+      headerRange.setBackground('#4285f4');
+      headerRange.setFontColor('#ffffff');
+      headerRange.setFontWeight('bold');
+      headerRange.setHorizontalAlignment('center');
+      
+      // 凍結標題列
+      sheet.setFrozenRows(1);
+      
+      console.log('工作表初始化完成');
+      return true;
+      
+    } catch (error) {
+      console.error('初始化工作表失敗:', error);
+      throw new Error('工作表初始化失敗: ' + error.toString());
+    }
+  }
+  
+  /**
+   * 用戶認證
+   */
+  function authenticateUser(username, password) {
+    try {
+      console.log(username)
+      console.log(password)
+      if (!username) {
         return {
-            date: parts[0].substring(4), // MMDD格式
-            region: parts[1],
-            location: parts[2],
-            appointmentType: parts[3],
-            year: new Date().getFullYear().toString()
+          success: false,
+          message: '請輸入用戶名'
         };
-    }
-    return {
-        date: '',
-        region: '',
-        location: '',
-        appointmentType: '副約',
-        year: new Date().getFullYear().toString()
-    };
-}
-
-function getTodayString(format) {
-    const today = new Date();
-    if (format === 'MMDD') {
-        return String(today.getMonth() + 1).padStart(2, '0') + 
-               String(today.getDate()).padStart(2, '0');
-    }
-    return today.getFullYear().toString() + 
-           String(today.getMonth() + 1).padStart(2, '0') + 
-           String(today.getDate()).padStart(2, '0');
-}
-
-// ============ 計數管理 ============
-function updateLocalCounts() {
-    const todayStr = getTodayString('MMDD');
-    const counts = {
-        morning: 0,
-        afternoon: 0,
-        evening: 0,
-        total: 0
-    };
-    
-    localInvitations.forEach(function(inv) {
-        // 只計算今日的主約邀約
-        if (inv.inviteDate === todayStr && 
-            inv.appointmentType === '主約' && 
-            (!currentUser || inv.inviter === currentUser.name || currentUser.name === '系統管理員')) {
-            
-            if (inv.session === '早上場') counts.morning++;
-            else if (inv.session === '下午場') counts.afternoon++;
-            else if (inv.session === '晚上場') counts.evening++;
-            
-            counts.total++;
-        }
-    });
-    
-    invitationCounts = counts;
-    updateCountDisplay();
-}
-
-function updateCountDisplay() {
-    const elements = {
-        morningCount: document.getElementById('morningCount'),
-        afternoonCount: document.getElementById('afternoonCount'),
-        eveningCount: document.getElementById('eveningCount'),
-        todayCount: document.getElementById('todayCount'),
-        remainingCount: document.getElementById('remainingCount')
-    };
-    
-    if (elements.morningCount) elements.morningCount.textContent = invitationCounts.morning;
-    if (elements.afternoonCount) elements.afternoonCount.textContent = invitationCounts.afternoon;
-    if (elements.eveningCount) elements.eveningCount.textContent = invitationCounts.evening;
-    if (elements.todayCount) elements.todayCount.textContent = invitationCounts.total;
-    
-    const remaining = Math.max(0, quotaLimits.total - invitationCounts.total);
-    if (elements.remainingCount) elements.remainingCount.textContent = remaining;
-    
-    updateSessionQuotaDisplay();
-}
-
-function updateSessionQuotaDisplay() {
-    const morningQuota = document.getElementById('morningQuota');
-    const afternoonQuota = document.getElementById('afternoonQuota');
-    const eveningQuota = document.getElementById('eveningQuota');
-    
-    if (morningQuota) {
-        if (invitationCounts.morning >= quotaLimits.morning && quotaLimits.morning > 0) {
-            morningQuota.classList.add('full');
-        } else {
-            morningQuota.classList.remove('full');
-        }
-    }
-    
-    if (afternoonQuota) {
-        if (invitationCounts.afternoon >= quotaLimits.afternoon && quotaLimits.afternoon > 0) {
-            afternoonQuota.classList.add('full');
-        } else {
-            afternoonQuota.classList.remove('full');
-        }
-    }
-    
-    if (eveningQuota) {
-        if (invitationCounts.evening >= quotaLimits.evening && quotaLimits.evening > 0) {
-            eveningQuota.classList.add('full');
-        } else {
-            eveningQuota.classList.remove('full');
-        }
-    }
-}
-
-function updateLocalStats() {
-    const todayStr = getTodayString('MMDD');
-    let localCount = 0;
-    let pendingCount = 0;
-    let syncedCount = 0;
-    
-    localInvitations.forEach(function(inv) {
-        if (inv.inviteDate === todayStr && 
-            (!currentUser || inv.inviter === currentUser.name || currentUser.name === '系統管理員')) {
-            localCount++;
-            if (inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR) {
-                pendingCount++;
-            } else if (inv.syncStatus === SYNC_STATUS.SYNCED) {
-                syncedCount++;
-            }
-        }
-    });
-    
-    const elements = {
-        localCount: document.getElementById('localCount'),
-        pendingCount: document.getElementById('pendingCount'),
-        syncedCount: document.getElementById('syncedCount')
-    };
-    
-    if (elements.localCount) elements.localCount.textContent = localCount;
-    if (elements.pendingCount) elements.pendingCount.textContent = pendingCount;
-    if (elements.syncedCount) elements.syncedCount.textContent = syncedCount;
-}
-
-// ============ Google Apps Script API 呼叫 ============
-function callGoogleScript(functionName, data = {}) {
-    console.log('呼叫 API 函數:', functionName, data);
-    
-    return new Promise((resolve, reject) => {
-        const payload = {
-            function: functionName,
-            parameters: data
+      }
+      
+      const accountData = readJsonFromDrive(CONFIG.ACCOUNT_FILE_ID);
+      
+      if (!accountData || !accountData.staffList) {
+        return {
+          success: false,
+          message: '用戶資料載入失敗'
         };
-        
-        // 使用 FormData 避免 CORS 預檢請求
-        const formData = new FormData();
-        formData.append('data', JSON.stringify(payload));
-        
-        const requestOptions = {
-            method: 'POST',
-            body: formData,
-            // 不設定 Content-Type，讓瀏覽器自動設定
+      }
+      
+      const user = accountData.staffList.find(staff => 
+        staff.name === username && staff.status === 'active'
+      );
+      
+      if (!user) {
+        return {
+          success: false,
+          message: '用戶名不存在或帳號已停用'
         };
+      }
+      
+      // 檢查密碼（如果用戶有設定密碼）
+      if (user.password && user.password !== '' && user.password !== password) {
+        return {
+          success: false,
+          message: '密碼錯誤'
+        };
+      }
+      
+      return {
+        success: true,
+        user: {
+          name: user.name,
+          role: user.role || 'staff',
+          status: user.status
+        },
+        message: '登入成功'
+      };
+      
+    } catch (error) {
+      console.error('用戶認證錯誤:', error);
+      return {
+        success: false,
+        message: '認證服務暫時無法使用: ' + error.message
+      };
+    }
+  }
+  
+  /**
+   * 取得用戶列表
+   */
+  function getUserList() {
+    try {
+      const accountData = readJsonFromDrive(CONFIG.ACCOUNT_FILE_ID);
+      
+      if (!accountData || !accountData.staffList) {
+        return [];
+      }
+      
+      return accountData.staffList
+        .filter(staff => staff.status === 'active')
+        .map(staff => ({
+          name: staff.name,
+          role: staff.role || 'staff',
+          hasPassword: !!(staff.password && staff.password !== '')
+        }));
+      
+    } catch (error) {
+      console.error('取得用戶列表錯誤:', error);
+      return [];
+    }
+  }
+  
+  /**
+   * 取得今日限額配置
+   */
+  function getTodayQuota(staffName, date) {
+    try {
+      if (!staffName) {
+        return { morning: 0, afternoon: 0, evening: 0, total: 0 };
+      }
+      
+      const scheduleData = readJsonFromDrive(CONFIG.SCHEDULE_FILE_ID);
+      
+      if (!scheduleData || !scheduleData.Name || !scheduleData.Data) {
+        return { morning: 0, afternoon: 0, evening: 0, total: 0 };
+      }
+      
+      const staffScheduleIndexes = scheduleData.Name[staffName] || [];
+      
+      // 遍歷該員工的排程
+      for (let i = 0; i < staffScheduleIndexes.length; i++) {
+        const index = staffScheduleIndexes[i];
+        const schedule = scheduleData.Data[index];
         
-        fetch(GOOGLE_SCRIPT_URL, requestOptions)
-        .then(response => {
-            console.log('API 回應狀態:', response.status, response.statusText);
+        if (schedule && schedule.約別 === '主約' && schedule.數量) {
+          const quotas = schedule.數量.toString().split('/');
+          if (quotas.length >= 3) {
+            const morningQuota = parseInt(quotas[0]) || 0;
+            const afternoonQuota = parseInt(quotas[1]) || 0;
+            const eveningQuota = parseInt(quotas[2]) || 0;
             
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            return response.text();
-        })
-        .then(text => {
-            console.log('API 回應內容:', text.substring(0, 200) + (text.length > 200 ? '...' : ''));
-            
-            try {
-                const result = JSON.parse(text);
-                if (result.success === false && result.error) {
-                    reject(new Error(result.error));
-                } else {
-                    resolve(result);
-                }
-            } catch (parseError) {
-                console.error('JSON 解析錯誤:', parseError);
-                
-                if (text.includes('<html>') || text.includes('<!DOCTYPE')) {
-                    reject(new Error('收到 HTML 回應，可能是權限或部署問題'));
-                } else {
-                    reject(new Error('API 回應格式錯誤: ' + text.substring(0, 100)));
-                }
-            }
-        })
-        .catch(error => {
-            console.error('API 請求失敗:', error);
-            
-            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-                reject(new Error('網路錯誤或 CORS 問題，請檢查 Google Apps Script 部署設定'));
-            } else {
-                reject(error);
-            }
-        });
-    });
-}
-
-function safeGoogleScriptCall(functionName, successCallback, errorCallback, data = {}) {
-    // 移除原來的 ...args 邏輯，直接使用 data 參數
-    callGoogleScript(functionName, data)
-        .then(result => {
-            if (successCallback) successCallback(result);
-        })
-        .catch(error => {
-            console.error('API 呼叫失敗:', functionName, error);
-            if (errorCallback) {
-                errorCallback(error.message || error.toString());
-            }
-        });
-}
-
-// ============ 雲端同步功能 ============
-function autoSync() {
-    if (!isOnline || syncInProgress || !currentUser) return;
-    
-    const pendingInvitations = localInvitations.filter(inv => 
-        inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR
-    );
-    
-    if (pendingInvitations.length > 0) {
-        console.log('開始自動同步:', pendingInvitations.length, '筆資料');
-        syncToCloud(pendingInvitations);
-    }
-}
-
-function manualSync() {
-    if (!isOnline) {
-        showAlert('warning', '請檢查網路連接');
-        return;
-    }
-    
-    if (syncInProgress) {
-        showAlert('warning', '同步進行中，請稍候');
-        return;
-    }
-    
-    const pendingInvitations = localInvitations.filter(inv => 
-        inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR
-    );
-    
-    if (pendingInvitations.length === 0) {
-        showAlert('success', '所有資料已同步');
-        return;
-    }
-    
-    console.log('開始手動同步:', pendingInvitations.length, '筆資料');
-    syncToCloud(pendingInvitations);
-}
-
-function syncToCloud(invitations) {
-    if (!invitations || invitations.length === 0) return;
-    
-    syncInProgress = true;
-    updateNetworkStatus();
-    showSyncStatus('正在同步 ' + invitations.length + ' 筆資料...', 'info');
-    
-    const syncBtn = document.getElementById('syncBtn');
-    const syncBtnText = document.getElementById('syncBtnText');
-    if (syncBtn && syncBtnText) {
-        syncBtn.disabled = true;
-        syncBtnText.innerHTML = '<div class="loading-spinner"></div>同步中...';
-    }
-    
-    // 標記為同步中
-    invitations.forEach(function(inv) {
-        inv.syncStatus = SYNC_STATUS.SYNCING;
-    });
-    
-    updateInvitationListDisplay();
-    updateLocalStats();
-    
-    // 批次同步
-    batchSyncInvitations(invitations, 0);
-}
-
-function batchSyncInvitations(invitations, index) {
-    if (index >= invitations.length) {
-        // 同步完成
-        finishSync();
-        return;
-    }
-    
-    const invitation = invitations[index];
-    const formData = convertToServerFormat(invitation);
-    
-    callGoogleScript('submitInvitation', formData)
-        .then(result => {
-            if (result.success) {
-                invitation.syncStatus = SYNC_STATUS.SYNCED;
-                invitation.serverId = result.invitationId || invitation.localId;
-                invitation.syncError = null;
-                console.log('同步成功:', invitation.name);
-            } else {
-                invitation.syncStatus = SYNC_STATUS.ERROR;
-                invitation.syncError = result.message || '同步失敗';
-                console.error('同步失敗:', invitation.name, result.message);
-            }
-            
-            // 繼續下一個
-            setTimeout(function() {
-                batchSyncInvitations(invitations, index + 1);
-            }, 500); // 避免過於頻繁的請求
-        })
-        .catch(error => {
-            invitation.syncStatus = SYNC_STATUS.ERROR;
-            invitation.syncError = error.toString();
-            console.error('同步錯誤:', invitation.name, error);
-            
-            // 繼續下一個
-            setTimeout(function() {
-                batchSyncInvitations(invitations, index + 1);
-            }, 500);
-        });
-}
-
-function finishSync() {
-    syncInProgress = false;
-    updateNetworkStatus();
-    saveLocalData();
-    updateLocalStats();
-    updateInvitationListDisplay();
-    
-    const syncBtn = document.getElementById('syncBtn');
-    const syncBtnText = document.getElementById('syncBtnText');
-    if (syncBtn && syncBtnText) {
-        syncBtn.disabled = false;
-        syncBtnText.textContent = '同步至雲端';
-    }
-    
-    const syncedCount = localInvitations.filter(inv => inv.syncStatus === SYNC_STATUS.SYNCED).length;
-    const errorCount = localInvitations.filter(inv => inv.syncStatus === SYNC_STATUS.ERROR).length;
-    
-    if (errorCount === 0) {
-        showSyncStatus('同步完成！共同步 ' + syncedCount + ' 筆資料', 'success');
-    } else {
-        showSyncStatus('同步完成，' + syncedCount + ' 筆成功，' + errorCount + ' 筆失敗', 'warning');
-    }
-    
-    console.log('同步完成，成功:', syncedCount, '失敗:', errorCount);
-}
-
-function convertToServerFormat(invitation) {
-    return {
-        name: invitation.name,
-        phone1: invitation.phone1,
-        phone2: invitation.phone2,
-        mammography: invitation.mammography === 1,
-        firstScreen: invitation.firstScreen === 1,
-        cervicalSmear: invitation.cervicalSmear === 1,
-        adultHealth: invitation.adultHealth === 1,
-        hepatitis: invitation.hepatitis === 1,
-        colorectal: invitation.colorectal === 1,
-        sessionInfo: invitation.sessionInfo,
-        session: invitation.session,
-        notes: invitation.notes,
-        inviter: invitation.inviter,
-        localId: invitation.localId
-    };
-}
-
-function showSyncStatus(message, type) {
-    const syncStatus = document.getElementById('syncStatus');
-    if (!syncStatus) return;
-    
-    syncStatus.className = 'sync-status show ' + (type || 'info');
-    syncStatus.textContent = message;
-    
-    if (type === 'success' || type === 'warning') {
-        setTimeout(function() {
-            syncStatus.classList.remove('show');
-        }, 3000);
-    }
-}
-
-// ============ 用戶管理和載入功能 ============
-function loadUserList() {
-    console.log('載入用戶列表...');
-    
-    safeGoogleScriptCall(
-        'getUserList',
-        function(users) {
-            console.log('用戶列表載入成功:', users.length, '個用戶');
-            
-            const select = document.getElementById('staffSelect');
-            if (!select) return;
-            
-            select.innerHTML = '<option value="">選擇邀約人員</option>';
-            
-            for (let i = 0; i < users.length; i++) {
-                const user = users[i];
-                const option = document.createElement('option');
-                option.value = user.name;
-                option.textContent = user.name;
-                option.dataset.hasPassword = user.hasPassword;
-                select.appendChild(option);
-            }
-        },
-        function(error) {
-            console.error('載入用戶列表失敗:', error);
-            showAlert('error', '載入用戶列表失敗：' + error);
-        },
-        {} // 空物件，getUserList 不需要參數
-    );
-}
-function loadSessionOptions(staffName) {
-    console.log('載入場次選項:', staffName);
-    
-    safeGoogleScriptCall(
-        'getSessionOptions',
-        function(sessions) {
-            console.log('場次選項載入成功:', sessions.length, '個場次');
-            sessionOptions = sessions;
-            updateSessionSelect('sessionInfo', sessions);
-            updateSessionSelect('editSessionInfo', sessions);
-        },
-        function(error) {
-            console.error('載入場次選項失敗:', error);
-            showAlert('error', '載入場次選項失敗：' + error);
-        },
-        { staffName: staffName || '' }  // 正確的參數格式
-    );
-}
-
-function updateSessionSelect(selectId, sessions) {
-    const select = document.getElementById(selectId);
-    if (!select) return;
-    
-    select.innerHTML = '<option value="">選擇場次</option>';
-    
-    for (let i = 0; i < sessions.length; i++) {
-        const session = sessions[i];
-        const option = document.createElement('option');
-        option.value = session.value;
-        option.textContent = session.display;
-        option.dataset.appointmentType = session.appointmentType;
-        select.appendChild(option);
-    }
-}
-
-function getAppointmentTypeFromSession(sessionValue) {
-    const parts = sessionValue.split('-');
-    if (parts.length >= 4) {
-        return parts[3];
-    }
-    
-    for (let i = 0; i < sessionOptions.length; i++) {
-        if (sessionOptions[i].value === sessionValue) {
-            return sessionOptions[i].appointmentType || '副約';
-        }
-    }
-    return '副約';
-}
-function login() {
-    const staffName = document.getElementById('staffSelect').value;
-    const password = document.getElementById('staffPassword').value;
-    
-    if (!staffName) {
-        showAlert('error', '請選擇邀約人員');
-        return;
-    }
-    
-    console.log('嘗試登入:', staffName);
-    
-    const selectedOption = document.querySelector('#staffSelect option[value="' + staffName + '"]');
-    const hasPassword = selectedOption && selectedOption.dataset.hasPassword === 'true';
-    
-    if (hasPassword && !password) {
-        showAlert('error', '此帳號需要密碼');
-        return;
-    }
-    
-    // 修正：將參數正確打包成物件
-    const loginData = {
-        username: staffName,    // 對應 Google Apps Script 的第一個參數
-        password: password || '' // 對應 Google Apps Script 的第二個參數
-    };
-    
-    safeGoogleScriptCall(
-        'authenticateUser',
-        function(result) {
-            if (result.success) {
-                console.log('登入成功:', result.user);
-                currentUser = result.user;
-                saveLocalData();
-                updateUserInterface();
-                loadTodayData();
-                loadSessionOptions(currentUser.name);
-                showAlert('success', '歡迎 ' + staffName + '，登入成功！');
-            } else {
-                showAlert('error', result.message);
-            }
-        },
-        function(error) {
-            showAlert('error', '登入失敗：' + error);
-        },
-        loginData  // 傳遞包含 username 和 password 的物件
-    );
-}
-
-
-
-function updateUserInterface() {
-    const userInfo = document.getElementById('userInfo');
-    const loginForm = document.getElementById('loginForm');
-    const quotaInfo = document.getElementById('quotaInfo');
-    const sessionQuotas = document.getElementById('sessionQuotas');
-    const functionTabs = document.getElementById('functionTabs');
-    const mainContent = document.getElementById('mainContent');
-    
-    if (userInfo) {
-        userInfo.classList.add('logged-in');
-        userInfo.innerHTML = '<div><div class="user-name">' + currentUser.name + '</div></div>';
-    }
-    
-    if (loginForm) loginForm.style.display = 'none';
-    if (quotaInfo) quotaInfo.style.display = 'grid';
-    if (sessionQuotas) sessionQuotas.style.display = 'grid';
-    if (functionTabs) functionTabs.style.display = 'flex';
-    if (mainContent) mainContent.style.display = 'block';
-}
-
-function loadTodayData() {
-    const today = new Date();
-    const todayStr = today.getFullYear().toString() + 
-                    String(today.getMonth() + 1).padStart(2, '0') + 
-                    String(today.getDate()).padStart(2, '0');
-    
-    console.log('載入今日資料:', todayStr);
-    
-    safeGoogleScriptCall(
-        'getTodayQuota',
-        function(quota) {
-            console.log('限額資料載入成功:', quota);
-            quotaLimits = quota;
-            
-            const elements = {
-                morningLimit: document.getElementById('morningLimit'),
-                afternoonLimit: document.getElementById('afternoonLimit'),
-                eveningLimit: document.getElementById('eveningLimit'),
-                todayLimit: document.getElementById('todayLimit')
+            return {
+              morning: morningQuota,
+              afternoon: afternoonQuota,
+              evening: eveningQuota,
+              total: morningQuota + afternoonQuota + eveningQuota
             };
-            
-            if (elements.morningLimit) elements.morningLimit.textContent = quota.morning;
-            if (elements.afternoonLimit) elements.afternoonLimit.textContent = quota.afternoon;
-            if (elements.eveningLimit) elements.eveningLimit.textContent = quota.evening;
-            if (elements.todayLimit) elements.todayLimit.textContent = quota.total;
-            
-            updateCountDisplay();
-        },
-        function(error) {
-            console.error('載入限額失敗:', error);
-        },
-        {
-            staffName: currentUser.name,
-            date: todayStr
+          }
         }
-    );
-}
-
-function checkQuotaBeforeSubmit(session, appointmentType) {
-    if (appointmentType !== '主約') {
-        return { canSubmit: true };
+      }
+      
+      return { morning: 0, afternoon: 0, evening: 0, total: 0 };
+      
+    } catch (error) {
+      console.error('取得限額配置錯誤:', error);
+      return { morning: 0, afternoon: 0, evening: 0, total: 0 };
     }
-    
-    let currentCount, limit;
-    
-    switch (session) {
-        case '早上場':
-            currentCount = invitationCounts.morning;
+  }
+  
+  /**
+   * 取得今日邀約統計
+   */
+  function getTodayInvitations(inviter, date) {
+    try {
+      if (!date) {
+        return { morning: 0, afternoon: 0, evening: 0, total: 0 };
+      }
+      
+      const sheet = getInvitationSheet();
+      const targetDate = date.length > 4 ? date.substring(4) : date; // 支援 YYYYMMDD 或 MMDD 格式
+      
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) {
+        return { morning: 0, afternoon: 0, evening: 0, total: 0 };
+      }
+      
+      const data = sheet.getRange(2, 1, lastRow - 1, 22).getValues();
+      
+      let morningCount = 0, afternoonCount = 0, eveningCount = 0;
+      
+      data.forEach(row => {
+        const inviteDate = row[17]; // 邀約日期
+        const session = row[15]; // 場次
+        const inviterName = row[16]; // 邀約人員
+        const appointmentType = row[18]; // 約別
+        
+        if (inviteDate === targetDate && 
+            (!inviter || inviterName === inviter) && 
+            appointmentType === "主約") {
+          
+          switch (session) {
+            case '早上場': 
+              morningCount++; 
+              break;
+            case '下午場': 
+              afternoonCount++; 
+              break;
+            case '晚上場': 
+              eveningCount++; 
+              break;
+          }
+        }
+      });
+      
+      return {
+        morning: morningCount,
+        afternoon: afternoonCount,
+        evening: eveningCount,
+        total: morningCount + afternoonCount + eveningCount
+      };
+      
+    } catch (error) {
+      console.error('取得邀約統計錯誤:', error);
+      return { morning: 0, afternoon: 0, evening: 0, total: 0 };
+    }
+  }
+  
+  /**
+   * 取得場次選項
+   */
+  function getSessionOptions(staffName) {
+    try {
+      const scheduleData = readJsonFromDrive(CONFIG.SCHEDULE_FILE_ID);
+      
+      if (!scheduleData || !scheduleData.Name || !scheduleData.Data) {
+        return [];
+      }
+      
+      const staffScheduleIndexes = scheduleData.Name[staffName] || [];
+      const isAdmin = staffScheduleIndexes.length === 0; // 如果沒有特定排程，視為管理員
+      
+      const sessions = [];
+      const todayStr = getTodayStringGMT8(); // 使用 GMT+8 的今日
+      const todayNum = parseInt(todayStr);
+      
+      if (isAdmin) {
+        // 管理員可以看到所有場次
+        scheduleData.Data.forEach(schedule => {
+          if (schedule && schedule.日期 && parseInt(schedule.日期) >= todayNum) {
+            const appointmentType = schedule.約別 || '副約';
+            const sessionValue = schedule.日期 + '-' + schedule.地區 + '-' + schedule.地點 + '-' + appointmentType;
+            const sessionDisplay = formatDate(schedule.日期.toString()) + ' / ' + 
+                                   schedule.地區 + ' / ' + schedule.地點 + ' / ' + appointmentType;
+            
+            if (!sessions.find(s => s.value === sessionValue)) {
+              sessions.push({
+                value: sessionValue,
+                display: sessionDisplay,
+                date: schedule.日期.toString(),
+                region: schedule.地區,
+                location: schedule.地點,
+                appointmentType: appointmentType
+              });
+            }
+          }
+        });
+      } else {
+        // 一般員工只能看到分配給自己的場次
+        staffScheduleIndexes.forEach(index => {
+          const schedule = scheduleData.Data[index];
+          
+          if (schedule && schedule.日期 && parseInt(schedule.日期) >= todayNum) {
+            const appointmentType = schedule.約別 || '副約';
+            const sessionValue = schedule.日期 + '-' + schedule.地區 + '-' + schedule.地點 + '-' + appointmentType;
+            const sessionDisplay = formatDate(schedule.日期.toString()) + ' / ' + 
+                                   schedule.地區 + ' / ' + schedule.地點 + ' / ' + appointmentType;
+            
+            if (!sessions.find(s => s.value === sessionValue)) {
+              sessions.push({
+                value: sessionValue,
+                display: sessionDisplay,
+                date: schedule.日期.toString(),
+                region: schedule.地區,
+                location: schedule.地點,
+                appointmentType: appointmentType
+              });
+            }
+          }
+        });
+      }
+      
+      // 按日期排序
+      sessions.sort((a, b) => a.date.localeCompare(b.date));
+      return sessions;
+      
+    } catch (error) {
+      console.error('取得場次選項錯誤:', error);
+      return [];
+    }
+  }
+  
+  /**
+   * 格式化日期 (YYYYMMDD -> MM/DD)
+   */
+  function formatDate(dateStr) {
+    if (!dateStr || dateStr.length !== 8) return dateStr;
+    const month = dateStr.substring(4, 6);
+    const day = dateStr.substring(6, 8);
+    return month + '/' + day;
+  }
+  
+  /**
+   * 提交邀約資料
+   */
+  function submitInvitation(formData) {
+    try {
+      if (!formData || !formData.name || !formData.phone1 || !formData.sessionInfo || !formData.session) {
+        return {
+          success: false,
+          message: '必填資料不完整'
+        };
+      }
+      
+      // 確保工作表已初始化
+      initializeInvitationSheet();
+      const sheet = getInvitationSheet();
+      
+      // 解析場次資訊
+      const sessionParts = formData.sessionInfo.split('-');
+      if (sessionParts.length < 4) {
+        return {
+          success: false,
+          message: '場次資訊格式錯誤'
+        };
+      }
+      
+      const sessionDate = sessionParts[0];
+      const region = sessionParts[1];
+      const location = sessionParts[2];
+      const appointmentType = sessionParts[3] || '副約';
+      
+      // 限額檢查（僅針對主約）
+      if (appointmentType === '主約' && formData.inviter) {
+        const todayStr = getTodayStringGMT8(); // 使用 GMT+8 時間
+        
+        const currentCounts = getTodayInvitations(formData.inviter, todayStr);
+        const quotaLimits = getTodayQuota(formData.inviter, todayStr);
+        
+        let currentCount = 0, limit = 0, sessionName = formData.session;
+        
+        switch (formData.session) {
+          case '早上場':
+            currentCount = currentCounts.morning;
             limit = quotaLimits.morning;
             break;
-        case '下午場':
-            currentCount = invitationCounts.afternoon;
+          case '下午場':
+            currentCount = currentCounts.afternoon;
             limit = quotaLimits.afternoon;
             break;
-        case '晚上場':
-            currentCount = invitationCounts.evening;
+          case '晚上場':
+            currentCount = currentCounts.evening;
             limit = quotaLimits.evening;
             break;
-        default:
-            return { canSubmit: true };
-    }
-    
-    if (currentCount >= limit && limit > 0) {
-        return {
-            canSubmit: false,
-            message: session + '的主約已達限額（' + currentCount + '/' + limit + '），無法提交。'
-        };
-    }
-    
-    return { canSubmit: true };
-}
-
-function checkQuotaWarning() {
-    const session = document.getElementById('session').value;
-    const sessionInfo = document.getElementById('sessionInfo').value;
-    const warningDiv = document.getElementById('quotaWarning');
-    
-    if (!warningDiv || !session || !sessionInfo) {
-        if (warningDiv) warningDiv.style.display = 'none';
-        return;
-    }
-    
-    const appointmentType = getAppointmentTypeFromSession(sessionInfo);
-    
-    if (appointmentType === '主約') {
-        let currentCount, limit;
-        
-        switch (session) {
-            case '早上場':
-                currentCount = invitationCounts.morning;
-                limit = quotaLimits.morning;
-                break;
-            case '下午場':
-                currentCount = invitationCounts.afternoon;
-                limit = quotaLimits.afternoon;
-                break;
-            case '晚上場':
-                currentCount = invitationCounts.evening;
-                limit = quotaLimits.evening;
-                break;
+          default:
+            currentCount = 0;
+            limit = 999999;
         }
         
-        if (currentCount >= limit && limit > 0) {
-            warningDiv.textContent = session + '的主約已達限額（' + currentCount + '/' + limit + '）。';
-            warningDiv.style.display = 'block';
-            return;
+        if (limit === 0) {
+          return {
+            success: false,
+            message: sessionName + ' 今日不接受主約邀約（限額為0）'
+          };
         }
+        
+        if (currentCount >= limit) {
+          return {
+            success: false,
+            message: sessionName + ' 的主約已達限額（' + currentCount + '/' + limit + '）'
+          };
+        }
+      }
+      
+      // 生成邀約資料 - 使用 GMT+8 時間
+      const inviteDate = getTodayStringGMT8('MMDD'); // GMT+8 的今日日期
+      
+      const invitationId = 'INV' + Date.now() + Math.random().toString(36).substr(2, 9);
+      const timestamp = getGMT8Timestamp(); // 使用 GMT+8 時間戳記
+      
+      const newRow = [
+        invitationId,                                    // ID
+        formData.name,                                   // 姓名
+        formData.phone1,                                 // 電話1
+        formData.phone2 || '',                           // 電話2
+        formData.mammography ? 1 : 0,                    // 乳攝
+        formData.firstScreen ? 1 : 0,                    // 首篩
+        formData.cervicalSmear ? 1 : 0,                  // 子抹
+        formData.adultHealth ? 1 : 0,                    // 成健
+        formData.hepatitis ? 1 : 0,                      // BC肝炎
+        formData.colorectal ? 1 : 0,                     // 大腸
+        formData.notes || '',                            // 備註
+        getYearGMT8(),                                   // 年份 (GMT+8)
+        sessionDate.substring(4),                        // 日期 (MMDD)
+        region,                                          // 地區
+        location,                                        // 地點
+        formData.session,                                // 場次
+        formData.inviter || '',                          // 邀約人員
+        inviteDate,                                      // 邀約日期 (GMT+8)
+        appointmentType,                                 // 約別
+        timestamp,                                       // 建立時間 (GMT+8)
+        timestamp,                                       // 最後修改時間 (GMT+8)
+        formData.localId || ''                           // 本地ID
+      ];
+      
+      // 插入新資料到第二行（標題下方）
+      sheet.insertRowAfter(1);
+      sheet.getRange(2, 1, 1, newRow.length).setValues([newRow]);
+      
+      // 回傳更新後的統計
+      const todayStr = getTodayStringGMT8();
+      const updatedCounts = getTodayInvitations(formData.inviter, todayStr);
+      
+      return {
+        success: true,
+        message: '邀約資料已成功儲存！',
+        invitationId: invitationId,
+        updatedCounts: updatedCounts,
+        timestamp: timestamp
+      };
+      
+    } catch (error) {
+      console.error('提交邀約失敗:', error);
+      return {
+        success: false,
+        message: '儲存失敗：' + error.toString(),
+        timestamp: getGMT8Timestamp()
+      };
     }
-    
-    warningDiv.style.display = 'none';
-}
-
-function switchFunction(func) {
-    currentFunction = func;
-    
-    const tabs = document.querySelectorAll('.tab-btn');
-    for (let i = 0; i < tabs.length; i++) {
-        tabs[i].classList.remove('active');
-    }
-    
-    // 找到被點擊的按鈕並添加 active 類
-    const activeTab = document.querySelector('.tab-btn[onclick*="' + func + '"]');
-    if (activeTab) {
-        activeTab.classList.add('active');
-    }
-    
-    const inviteSection = document.getElementById('inviteSection');
-    const listSection = document.getElementById('listSection');
-    
-    if (inviteSection) inviteSection.style.display = func === 'invite' ? 'block' : 'none';
-    if (listSection) listSection.style.display = func === 'list' ? 'block' : 'none';
-    
-    if (func === 'list') {
-        refreshInvitationList();
-    }
-}
-
-// ============ 邀約列表管理 ============
-function refreshInvitationList() {
-    loadInvitationList();
-    updateLocalStats();
-    showAlert('success', '名單已更新');
-}
-
-function loadInvitationList() {
-    const listContainer = document.getElementById('invitationList');
-    if (!listContainer) return;
-    
-    // 直接從本地資料載入
-    const todayStr = getTodayString('MMDD');
-    const todayInvitations = localInvitations.filter(function(inv) {
-        return inv.inviteDate === todayStr && 
-               (!currentUser || inv.inviter === currentUser.name || currentUser.name === '系統管理員');
-    });
-    
-    if (todayInvitations.length === 0) {
-        listContainer.innerHTML = '<div class="no-data">今日暫無邀約記錄</div>';
-        return;
-    }
-    
-    let html = '';
-    for (let i = 0; i < todayInvitations.length; i++) {
-        const invitation = todayInvitations[i];
-        html += renderInvitationItem(invitation);
-    }
-    
-    listContainer.innerHTML = html;
-    updateLocalStats();
-}
-
-function renderInvitationItem(invitation) {
-    const healthItems = getHealthItemsDisplay(invitation);
-    const appointmentTypeClass = invitation.appointmentType === '主約' ? 'primary' : 'secondary';
-    const syncIndicator = getSyncIndicatorHtml(invitation);
-    
-    return '<div class="invitation-item ' + invitation.syncStatus + '">' +
-        syncIndicator +
-        '<div class="invitation-header">' +
-            '<div>' +
-                '<div class="invitation-name">' + invitation.name + 
-                ' <span class="appointment-type-tag ' + appointmentTypeClass + '">' + invitation.appointmentType + '</span></div>' +
-                '<div class="invitation-phone">' + invitation.phone1 + '</div>' +
-                (currentUser && currentUser.name === '系統管理員' ? '<div style="font-size: 0.75em; color: #666;">邀約人：' + invitation.inviter + '</div>' : '') +
-            '</div>' +
-            '<div class="invitation-actions">' +
-                '<button class="btn-small btn-edit" onclick="editInvitation(\'' + invitation.localId + '\')">編輯</button>' +
-                '<button class="btn-small btn-delete" onclick="deleteInvitation(\'' + invitation.localId + '\')">刪除</button>' +
-            '</div>' +
-        '</div>' +
-        '<div class="invitation-details">' +
-            '<div class="detail-item"><div class="detail-label">日期</div><div class="detail-value">' + formatDate(invitation.date) + '</div></div>' +
-            '<div class="detail-item"><div class="detail-label">地區</div><div class="detail-value">' + invitation.region + '</div></div>' +
-            '<div class="detail-item"><div class="detail-label">地點</div><div class="detail-value">' + invitation.location + '</div></div>' +
-            '<div class="detail-item"><div class="detail-label">時段</div><div class="detail-value">' + invitation.session + '</div></div>' +
-        '</div>' +
-        '<div class="health-items">' + healthItems + '</div>' +
-        (invitation.notes ? '<div style="margin-top: 6px; font-size: 0.8em; color: #666;">備註: ' + invitation.notes + '</div>' : '') +
-        (invitation.syncError ? '<div style="margin-top: 6px; font-size: 0.75em; color: #dc3545;">同步錯誤: ' + invitation.syncError + '</div>' : '') +
-    '</div>';
-}
-
-function getSyncIndicatorHtml(invitation) {
-    let text, className;
-    
-    switch (invitation.syncStatus) {
-        case SYNC_STATUS.PENDING:
-            text = '待同步';
-            className = 'pending';
-            break;
-        case SYNC_STATUS.SYNCING:
-            text = '同步中';
-            className = 'syncing';
-            break;
-        case SYNC_STATUS.SYNCED:
-            text = '已同步';
-            className = 'synced';
-            break;
-        case SYNC_STATUS.ERROR:
-            text = '同步失敗';
-            className = 'error';
-            break;
-        default:
-            text = '未知';
-            className = 'pending';
-    }
-    
-    return '<div class="sync-indicator ' + className + '">' + text + '</div>';
-}
-
-function formatDate(dateStr) {
-    if (!dateStr || dateStr.length !== 4) return dateStr;
-    const month = dateStr.substring(0, 2);
-    const day = dateStr.substring(2, 4);
-    return month + '/' + day;
-}
-
-function getHealthItemsDisplay(invitation) {
-    const items = [];
-    if (invitation.mammography) items.push('乳攝');
-    if (invitation.firstScreen) items.push('首篩');
-    if (invitation.cervicalSmear) items.push('子抹');
-    if (invitation.adultHealth) items.push('成健');
-    if (invitation.hepatitis) items.push('BC肝炎');
-    if (invitation.colorectal) items.push('大腸');
-    
-    let html = '';
-    for (let i = 0; i < items.length; i++) {
-        html += '<span class="health-tag">' + items[i] + '</span>';
-    }
-    return html;
-}
-
-// ============ 表單處理 ============
-function handleSubmit(e) {
-    e.preventDefault();
-    
-    if (!currentUser) {
-        showAlert('error', '請先登入');
-        return;
-    }
-    
-    const sessionInfo = document.getElementById('sessionInfo').value;
-    const session = document.getElementById('session').value;
-    const appointmentType = getAppointmentTypeFromSession(sessionInfo);
-    
-    const quotaCheck = checkQuotaBeforeSubmit(session, appointmentType);
-    if (!quotaCheck.canSubmit) {
-        showAlert('error', quotaCheck.message);
-        return;
-    }
-    
-    const formData = {
-        name: document.getElementById('name').value.trim(),
-        phone1: document.getElementById('phone1').value.trim(),
-        phone2: document.getElementById('phone2').value.trim(),
-        mammography: document.getElementById('mammography').checked,
-        firstScreen: document.getElementById('firstScreen').checked,
-        cervicalSmear: document.getElementById('cervicalSmear').checked,
-        adultHealth: document.getElementById('adultHealth').checked,
-        hepatitis: document.getElementById('hepatitis').checked,
-        colorectal: document.getElementById('colorectal').checked,
-        sessionInfo: sessionInfo,
-        session: session,
-        notes: document.getElementById('notes').value.trim(),
-        inviter: currentUser.name
-    };
-    
-    if (!formData.name || !formData.phone1 || !formData.sessionInfo || !formData.session) {
-        showAlert('error', '請填寫所有必填欄位');
-        return;
-    }
-    
-    const hasHealthCheck = formData.mammography || formData.firstScreen || 
-                         formData.cervicalSmear || formData.adultHealth || 
-                         formData.hepatitis || formData.colorectal;
-    
-    if (!hasHealthCheck) {
-        showAlert('warning', '請至少選擇一項健檢項目');
-        return;
-    }
-    
-    submitInvitation(formData);
-}
-
-function submitInvitation(data) {
-    const submitBtn = document.getElementById('submitBtn');
-    
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = '提交中...';
-    }
-    
-    showSubmitStatus('processing', '正在儲存邀約資料...');
+  }
+  
+  /**
+   * 批次提交邀約資料
+   */
+  function batchSubmitInvitations(invitationsArray) {
+    const results = [];
+    let successCount = 0;
+    let errorCount = 0;
     
     try {
-        // 先保存到本地
-        const invitation = addInvitationToLocal(data);
-        
-        showSubmitStatus('success', '邀約資料已儲存！' + (!isOnline ? '（將在連網時同步）' : ''));
-        resetForm();
-        
-        // 如果在線，嘗試立即同步
-        if (isOnline) {
-            setTimeout(function() {
-                syncToCloud([invitation]);
-            }, 1000);
+      if (!invitationsArray || !Array.isArray(invitationsArray)) {
+        throw new Error('無效的邀約資料陣列');
+      }
+      
+      for (let i = 0; i < invitationsArray.length; i++) {
+        try {
+          const result = submitInvitation(invitationsArray[i]);
+          results.push({
+            index: i,
+            localId: invitationsArray[i].localId,
+            success: result.success,
+            message: result.message,
+            invitationId: result.invitationId
+          });
+          
+          if (result.success) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (error) {
+          results.push({
+            index: i,
+            localId: invitationsArray[i].localId,
+            success: false,
+            message: error.toString(),
+            invitationId: null
+          });
+          errorCount++;
         }
-        
+      }
+      
+      return {
+        success: errorCount === 0,
+        totalCount: invitationsArray.length,
+        successCount: successCount,
+        errorCount: errorCount,
+        results: results,
+        message: `批次提交完成：${successCount} 成功，${errorCount} 失敗`,
+        timestamp: getGMT8Timestamp()
+      };
+      
     } catch (error) {
-        console.error('提交邀約失敗:', error);
-        showSubmitStatus('error', '儲存失敗：' + error.toString());
-    } finally {
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = '提交邀約資料';
-        }
+      console.error('批次提交失敗:', error);
+      return {
+        success: false,
+        totalCount: invitationsArray ? invitationsArray.length : 0,
+        successCount: 0,
+        errorCount: invitationsArray ? invitationsArray.length : 0,
+        results: [],
+        message: '批次提交失敗：' + error.toString(),
+        timestamp: getGMT8Timestamp()
+      };
     }
-}
-
-function resetForm() {
-    const elements = {
-        name: document.getElementById('name'),
-        phone1: document.getElementById('phone1'),
-        phone2: document.getElementById('phone2'),
-        notes: document.getElementById('notes'),
-        sessionInfo: document.getElementById('sessionInfo'),
-        session: document.getElementById('session')
-    };
-    
-    if (elements.name) elements.name.value = '';
-    if (elements.phone1) elements.phone1.value = '';
-    if (elements.phone2) elements.phone2.value = '';
-    if (elements.notes) elements.notes.value = '';
-    if (elements.sessionInfo) elements.sessionInfo.value = '';
-    if (elements.session) elements.session.value = '';
-    
-    const checkboxItems = document.querySelectorAll('#inviteSection .checkbox-item');
-    for (let i = 0; i < checkboxItems.length; i++) {
-        const item = checkboxItems[i];
-        const checkbox = item.querySelector('input');
-        if (checkbox && checkbox.id === 'mammography') {
-            checkbox.checked = true;
-            item.classList.add('checked');
-        } else if (checkbox) {
-            checkbox.checked = false;
-            item.classList.remove('checked');
-        }
-    }
-    
-    const quotaWarning = document.getElementById('quotaWarning');
-    if (quotaWarning) quotaWarning.style.display = 'none';
-}
-
-// ============ 編輯功能 ============
-function editInvitation(localId) {
-    const invitation = localInvitations.find(inv => inv.localId === localId);
-    if (!invitation) {
-        showAlert('error', '找不到邀約記錄');
-        return;
-    }
-    
-    editingInvitation = invitation;
-    
-    const elements = {
-        editId: document.getElementById('editId'),
-        editName: document.getElementById('editName'),
-        editPhone1: document.getElementById('editPhone1'),
-        editPhone2: document.getElementById('editPhone2'),
-        editSession: document.getElementById('editSession'),
-        editNotes: document.getElementById('editNotes'),
-        editSessionInfo: document.getElementById('editSessionInfo')
-    };
-    
-    if (elements.editId) elements.editId.value = invitation.localId;
-    if (elements.editName) elements.editName.value = invitation.name;
-    if (elements.editPhone1) elements.editPhone1.value = invitation.phone1;
-    if (elements.editPhone2) elements.editPhone2.value = invitation.phone2 || '';
-    if (elements.editSession) elements.editSession.value = invitation.session;
-    if (elements.editNotes) elements.editNotes.value = invitation.notes || '';
-    if (elements.editSessionInfo) elements.editSessionInfo.value = invitation.sessionInfo;
-    
-    setEditCheckbox('editMammography', invitation.mammography);
-    setEditCheckbox('editFirstScreen', invitation.firstScreen);
-    setEditCheckbox('editCervicalSmear', invitation.cervicalSmear);
-    setEditCheckbox('editAdultHealth', invitation.adultHealth);
-    setEditCheckbox('editHepatitis', invitation.hepatitis);
-    setEditCheckbox('editColorectal', invitation.colorectal);
-    
-    const editModal = document.getElementById('editModal');
-    if (editModal) editModal.style.display = 'flex';
-}
-
-function setEditCheckbox(checkboxId, value) {
-    const checkbox = document.getElementById(checkboxId);
-    if (!checkbox) return;
-    
-    const item = checkbox.closest('.checkbox-item');
-    
-    checkbox.checked = value === 1 || value === true;
-    if (checkbox.checked) {
-        item.classList.add('checked');
-    } else {
-        item.classList.remove('checked');
-    }
-}
-
-function handleEditSubmit(e) {
-    e.preventDefault();
-    
-    const localId = document.getElementById('editId').value;
-    const name = document.getElementById('editName').value.trim();
-    const phone1 = document.getElementById('editPhone1').value.trim();
-    const sessionInfo = document.getElementById('editSessionInfo').value;
-    const session = document.getElementById('editSession').value;
-    
-    if (!name || !phone1 || !sessionInfo || !session) {
-        showAlert('error', '請填寫所有必填欄位');
-        return;
-    }
-    
-    const hasHealthCheck = document.getElementById('editMammography').checked || 
-                         document.getElementById('editFirstScreen').checked || 
-                         document.getElementById('editCervicalSmear').checked || 
-                         document.getElementById('editAdultHealth').checked || 
-                         document.getElementById('editHepatitis').checked || 
-                         document.getElementById('editColorectal').checked;
-    
-    if (!hasHealthCheck) {
-        showAlert('warning', '請至少選擇一項健檢項目');
-        return;
-    }
-    
-    const updateData = {
-        name: name,
-        phone1: phone1,
-        phone2: document.getElementById('editPhone2').value.trim(),
-        mammography: document.getElementById('editMammography').checked ? 1 : 0,
-        firstScreen: document.getElementById('editFirstScreen').checked ? 1 : 0,
-        cervicalSmear: document.getElementById('editCervicalSmear').checked ? 1 : 0,
-        adultHealth: document.getElementById('editAdultHealth').checked ? 1 : 0,
-        hepatitis: document.getElementById('editHepatitis').checked ? 1 : 0,
-        colorectal: document.getElementById('editColorectal').checked ? 1 : 0,
-        sessionInfo: sessionInfo,
-        session: session,
-        notes: document.getElementById('editNotes').value.trim()
-    };
-    
-    if (updateInvitationInLocal(localId, updateData)) {
-        closeEditModal();
-        showAlert('success', '邀約資料已更新！');
-        refreshInvitationList();
+  }
+  
+  /**
+   * 取得今日邀約名單
+   */
+  function getTodayInvitationList(inviter, date) {
+    try {
+      if (!date) {
+        return [];
+      }
+      
+      const sheet = getInvitationSheet();
+      const targetDate = date.length > 4 ? date.substring(4) : date; // 支援 YYYYMMDD 或 MMDD 格式
+      
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) {
+        return [];
+      }
+      
+      const data = sheet.getRange(2, 1, lastRow - 1, 22).getValues();
+      const invitations = [];
+      
+      data.forEach((row, index) => {
+        const inviteDate = row[17]; // 邀約日期
+        const inviterName = row[16]; // 邀約人員
         
-        // 如果在線，嘗試同步更新的資料
-        if (isOnline) {
-            const invitation = localInvitations.find(inv => inv.localId === localId);
-            if (invitation && invitation.syncStatus !== SYNC_STATUS.SYNCED) {
-                setTimeout(function() {
-                    syncToCloud([invitation]);
-                }, 1000);
-            }
+        if (inviteDate === targetDate && (!inviter || inviterName === inviter)) {
+          invitations.push({
+            id: row[0],                    // ID
+            name: row[1],                  // 姓名
+            phone1: row[2],                // 電話1
+            phone2: row[3],                // 電話2
+            mammography: row[4],           // 乳攝
+            firstScreen: row[5],           // 首篩
+            cervicalSmear: row[6],         // 子抹
+            adultHealth: row[7],           // 成健
+            hepatitis: row[8],             // BC肝炎
+            colorectal: row[9],            // 大腸
+            notes: row[10],                // 備註
+            year: row[11],                 // 年份
+            date: row[12],                 // 日期
+            region: row[13],               // 地區
+            location: row[14],             // 地點
+            session: row[15],              // 場次
+            inviter: row[16],              // 邀約人員
+            inviteDate: row[17],           // 邀約日期
+            appointmentType: row[18],      // 約別
+            createTime: row[19],           // 建立時間
+            lastModified: row[20],         // 最後修改時間
+            localId: row[21],              // 本地ID
+            rowIndex: index + 2            // 工作表行號
+          });
         }
-    } else {
-        showAlert('error', '更新失敗，找不到邀約記錄');
+      });
+      
+      // 按建立時間降序排列（最新的在前）
+      invitations.sort((a, b) => {
+        const timeA = new Date(a.createTime || 0);
+        const timeB = new Date(b.createTime || 0);
+        return timeB - timeA;
+      });
+      
+      return invitations;
+      
+    } catch (error) {
+      console.error('取得邀約名單錯誤:', error);
+      return [];
     }
-}
-
-function closeEditModal() {
-    const editModal = document.getElementById('editModal');
-    if (editModal) editModal.style.display = 'none';
-    editingInvitation = null;
-}
-
-function deleteInvitation(localId) {
-    if (!confirm('確定要刪除這筆邀約記錄嗎？')) return;
-    
-    if (deleteInvitationFromLocal(localId)) {
-        showAlert('success', '邀約記錄已刪除！');
-        refreshInvitationList();
-    } else {
-        showAlert('error', '刪除失敗，找不到邀約記錄');
+  }
+  
+  /**
+   * 更新邀約資料
+   */
+  function updateInvitation(formData) {
+    try {
+      if (!formData || (!formData.id && !formData.localId)) {
+        return {
+          success: false,
+          message: '缺少邀約ID'
+        };
+      }
+      
+      const sheet = getInvitationSheet();
+      const lastRow = sheet.getLastRow();
+      
+      if (lastRow <= 1) {
+        return {
+          success: false,
+          message: '找不到要更新的邀約記錄'
+        };
+      }
+      
+      const data = sheet.getRange(2, 1, lastRow - 1, 22).getValues();
+      let targetRowIndex = -1;
+      
+      // 尋找目標記錄
+      for (let i = 0; i < data.length; i++) {
+        if (data[i][0] === formData.id || data[i][21] === formData.localId) {
+          targetRowIndex = i + 2; // +2 因為有標題行且從1開始計數
+          break;
+        }
+      }
+      
+      if (targetRowIndex === -1) {
+        return {
+          success: false,
+          message: '找不到要更新的邀約記錄'
+        };
+      }
+      
+      // 解析場次資訊
+      const sessionParts = formData.sessionInfo ? formData.sessionInfo.split('-') : [];
+      if (sessionParts.length < 4) {
+        return {
+          success: false,
+          message: '場次資訊格式錯誤'
+        };
+      }
+      
+      const sessionDate = sessionParts[0];
+      const region = sessionParts[1];
+      const location = sessionParts[2];
+      const appointmentType = sessionParts[3] || '副約';
+      
+      // 更新資料
+      const originalData = data[targetRowIndex - 2];
+      const timestamp = getGMT8Timestamp(); // 使用 GMT+8 時間戳記
+      
+      const updatedRow = [
+        formData.id || originalData[0],              // ID
+        formData.name || originalData[1],            // 姓名
+        formData.phone1 || originalData[2],          // 電話1
+        formData.phone2 || originalData[3] || '',    // 電話2
+        formData.mammography ? 1 : 0,                // 乳攝
+        formData.firstScreen ? 1 : 0,                // 首篩
+        formData.cervicalSmear ? 1 : 0,              // 子抹
+        formData.adultHealth ? 1 : 0,                // 成健
+        formData.hepatitis ? 1 : 0,                  // BC肝炎
+        formData.colorectal ? 1 : 0,                 // 大腸
+        formData.notes || originalData[10] || '',    // 備註
+        originalData[11],                            // 年份（保持不變）
+        sessionDate ? sessionDate.substring(4) : originalData[12], // 日期
+        region || originalData[13],                  // 地區
+        location || originalData[14],                // 地點
+        formData.session || originalData[15],        // 場次
+        formData.inviter || originalData[16],        // 邀約人員
+        originalData[17],                            // 邀約日期（保持不變）
+        appointmentType,                             // 約別
+        originalData[19],                            // 建立時間（保持不變）
+        timestamp,                                   // 最後修改時間 (GMT+8)
+        formData.localId || originalData[21] || ''   // 本地ID
+      ];
+      
+      // 更新工作表
+      sheet.getRange(targetRowIndex, 1, 1, updatedRow.length).setValues([updatedRow]);
+      
+      // 回傳更新後的統計
+      const todayStr = getTodayStringGMT8();
+      const updatedCounts = getTodayInvitations(formData.inviter, todayStr);
+      
+      return {
+        success: true,
+        message: '邀約資料已更新！',
+        updatedCounts: updatedCounts,
+        timestamp: timestamp
+      };
+      
+    } catch (error) {
+      console.error('更新邀約失敗:', error);
+      return {
+        success: false,
+        message: '更新失敗：' + error.toString(),
+        timestamp: getGMT8Timestamp()
+      };
     }
-}
-
-// ============ UI互動功能 ============
-function toggleCheckbox(checkboxId) {
-    const checkbox = document.getElementById(checkboxId);
-    if (!checkbox) return;
-    
-    const item = checkbox.closest('.checkbox-item');
-    
-    checkbox.checked = !checkbox.checked;
-    
-    if (checkbox.checked) {
-        item.classList.add('checked');
-    } else {
-        item.classList.remove('checked');
+  }
+  
+  /**
+   * 刪除邀約資料
+   */
+  function deleteInvitation(id) {
+    try {
+      if (!id) {
+        return {
+          success: false,
+          message: '缺少邀約ID'
+        };
+      }
+      
+      const sheet = getInvitationSheet();
+      const lastRow = sheet.getLastRow();
+      
+      if (lastRow <= 1) {
+        return {
+          success: false,
+          message: '找不到要刪除的邀約記錄'
+        };
+      }
+      
+      const data = sheet.getRange(2, 1, lastRow - 1, 22).getValues();
+      let targetRowIndex = -1;
+      let deletedRecord = null;
+      
+      // 尋找目標記錄
+      for (let i = 0; i < data.length; i++) {
+        if (data[i][0] === id || data[i][21] === id) {
+          targetRowIndex = i + 2; // +2 因為有標題行且從1開始計數
+          deletedRecord = data[i];
+          break;
+        }
+      }
+      
+      if (targetRowIndex === -1) {
+        return {
+          success: false,
+          message: '找不到要刪除的邀約記錄'
+        };
+      }
+      
+      // 刪除行
+      sheet.deleteRow(targetRowIndex);
+      
+      // 回傳更新後的統計
+      const todayStr = getTodayStringGMT8();
+      
+      const inviterName = deletedRecord[16]; // 邀約人員
+      const updatedCounts = getTodayInvitations(inviterName, todayStr);
+      
+      return {
+        success: true,
+        message: '邀約記錄已刪除！',
+        updatedCounts: updatedCounts,
+        deletedRecord: {
+          name: deletedRecord[1],
+          phone: deletedRecord[2]
+        },
+        timestamp: getGMT8Timestamp()
+      };
+      
+    } catch (error) {
+      console.error('刪除邀約失敗:', error);
+      return {
+        success: false,
+        message: '刪除失敗：' + error.toString(),
+        timestamp: getGMT8Timestamp()
+      };
     }
-}
-
-function toggleEditCheckbox(checkboxId) {
-    const checkbox = document.getElementById(checkboxId);
-    if (!checkbox) return;
+  }
+  
+  /**
+   * 系統健康檢查
+   */
+  function healthCheck() {
+    const results = {};
     
-    const item = checkbox.closest('.checkbox-item');
-    
-    checkbox.checked = !checkbox.checked;
-    
-    if (checkbox.checked) {
-        item.classList.add('checked');
-    } else {
-        item.classList.remove('checked');
+    try {
+      // 檢查 Drive 文件存取
+      results.accountFile = 'OK';
+      try {
+        const accountData = readJsonFromDrive(CONFIG.ACCOUNT_FILE_ID);
+        if (!accountData || !accountData.staffList) {
+          results.accountFile = 'WARNING: 帳號資料格式異常';
+        }
+      } catch (error) {
+        results.accountFile = 'FAILED: ' + error.message;
+      }
+      
+      results.scheduleFile = 'OK';
+      try {
+        const scheduleData = readJsonFromDrive(CONFIG.SCHEDULE_FILE_ID);
+        if (!scheduleData || !scheduleData.Name || !scheduleData.Data) {
+          results.scheduleFile = 'WARNING: 排程資料格式異常';
+        }
+      } catch (error) {
+        results.scheduleFile = 'FAILED: ' + error.message;
+      }
+      
+      // 檢查 Sheets 存取
+      results.invitationSheet = 'OK';
+      try {
+        const sheet = getInvitationSheet();
+        const lastRow = sheet.getLastRow();
+        results.invitationSheetRows = lastRow;
+      } catch (error) {
+        results.invitationSheet = 'FAILED: ' + error.message;
+      }
+      
+      // 檢查用戶功能
+      results.userList = 'OK';
+      try {
+        const users = getUserList();
+        results.activeUsers = users.length;
+        if (users.length === 0) {
+          results.userList = 'WARNING: 沒有活躍用戶';
+        }
+      } catch (error) {
+        results.userList = 'FAILED: ' + error.message;
+      }
+      
+      // 整體狀態評估
+      const hasFailures = Object.values(results).some(result => 
+        typeof result === 'string' && result.includes('FAILED')
+      );
+      
+      const overallStatus = hasFailures ? 'UNHEALTHY' : 'HEALTHY';
+      
+      return {
+        success: true,
+        status: overallStatus,
+        timestamp: getGMT8Timestamp(),
+        timezone: 'GMT+8 (Asia/Taipei)',
+        version: '2.1.0-GMT8',
+        checks: results
+      };
+      
+    } catch (error) {
+      return {
+        success: false,
+        status: 'UNHEALTHY',
+        timestamp: getGMT8Timestamp(),
+        error: error.toString(),
+        checks: results
+      };
     }
-}
-
-function showAlert(type, message) {
-    const alert = document.getElementById('alertMessage');
-    if (!alert) return;
-    
-    alert.className = 'alert ' + type;
-    alert.textContent = message;
-    alert.style.display = 'block';
-    
-    setTimeout(function() {
-        alert.style.display = 'none';
-    }, 3000);
-}
-
-function showSubmitStatus(type, message) {
-    const status = document.getElementById('submitStatus');
-    if (!status) return;
-    
-    status.className = 'submit-status ' + type;
-    status.textContent = message;
-    status.style.display = 'block';
-    
-    if (type !== 'processing') {
-        setTimeout(function() {
-            status.style.display = 'none';
-        }, 3000);
+  }
+  
+  /**
+   * 取得系統統計資訊
+   */
+  function getSystemStats() {
+    try {
+      const sheet = getInvitationSheet();
+      const lastRow = sheet.getLastRow();
+      
+      if (lastRow <= 1) {
+        return {
+          success: true,
+          totalInvitations: 0,
+          todayInvitations: 0,
+          thisMonthInvitations: 0,
+          activeUsers: getUserList().length,
+          timestamp: getGMT8Timestamp(),
+          timezone: 'GMT+8 (Asia/Taipei)'
+        };
+      }
+      
+      const data = sheet.getRange(2, 1, lastRow - 1, 22).getValues();
+      const todayStr = getTodayStringGMT8('MMDD'); // GMT+8 的今日
+      const thisMonthStr = todayStr.substring(0, 2); // 取得月份
+      
+      let todayCount = 0;
+      let thisMonthCount = 0;
+      
+      data.forEach(row => {
+        const inviteDate = row[17]; // 邀約日期 (MMDD)
+        
+        if (inviteDate === todayStr) {
+          todayCount++;
+        }
+        
+        if (inviteDate && inviteDate.substring(0, 2) === thisMonthStr) {
+          thisMonthCount++;
+        }
+      });
+      
+      return {
+        success: true,
+        totalInvitations: data.length,
+        todayInvitations: todayCount,
+        thisMonthInvitations: thisMonthCount,
+        activeUsers: getUserList().length,
+        timestamp: getGMT8Timestamp(),
+        timezone: 'GMT+8 (Asia/Taipei)'
+      };
+      
+    } catch (error) {
+      console.error('獲取統計資訊失敗:', error);
+      return {
+        success: false,
+        message: '獲取統計資訊失敗：' + error.toString(),
+        timestamp: getGMT8Timestamp()
+      };
     }
-}
-
-function updateInvitationListDisplay() {
-    if (currentFunction === 'list') {
-        loadInvitationList();
+  }
+  
+  /**
+   * 手動測試函數 - 在 Google Apps Script 編輯器中執行
+   */
+  function runManualTest() {
+    console.log('=== 開始手動測試 (GMT+8 版本) ===');
+    
+    try {
+      // 測試時區函數
+      console.log('測試 GMT+8 時間函數');
+      const gmt8Time = getGMT8Timestamp();
+      const todayGMT8 = getTodayStringGMT8();
+      const todayMMDD = getTodayStringGMT8('MMDD');
+      const yearGMT8 = getYearGMT8();
+      
+      console.log('GMT+8 時間戳記:', gmt8Time);
+      console.log('GMT+8 今日 (YYYYMMDD):', todayGMT8);
+      console.log('GMT+8 今日 (MMDD):', todayMMDD);
+      console.log('GMT+8 年份:', yearGMT8);
+      
+      // 測試 1: 連接測試
+      console.log('測試 1: 連接測試');
+      const connectionTest = testConnection();
+      console.log('連接測試結果:', connectionTest);
+      
+      // 測試 2: 健康檢查
+      console.log('測試 2: 健康檢查');
+      const healthTest = healthCheck();
+      console.log('健康檢查結果:', healthTest);
+      
+      // 測試 3: 用戶列表
+      console.log('測試 3: 用戶列表');
+      const userList = getUserList();
+      console.log('用戶列表 (' + userList.length + ' 個):', userList);
+      
+      // 測試 4: 工作表初始化
+      console.log('測試 4: 工作表初始化');
+      const initResult = initializeInvitationSheet();
+      console.log('工作表初始化結果:', initResult);
+      
+      // 測試 5: 系統統計
+      console.log('測試 5: 系統統計');
+      const stats = getSystemStats();
+      console.log('系統統計:', stats);
+      
+      console.log('=== 手動測試完成 ===');
+      
+      return {
+        success: true,
+        message: '所有測試完成 (GMT+8 版本)',
+        timezone: 'GMT+8 (Asia/Taipei)',
+        testTime: gmt8Time,
+        results: {
+          connection: connectionTest.success,
+          health: healthTest.success,
+          userCount: userList.length,
+          stats: stats.success,
+          timezone: {
+            timestamp: gmt8Time,
+            today: todayGMT8,
+            todayMMDD: todayMMDD,
+            year: yearGMT8
+          }
+        }
+      };
+      
+    } catch (error) {
+      console.error('手動測試失敗:', error);
+      return {
+        success: false,
+        message: '測試失敗: ' + error.toString(),
+        error: error.toString(),
+        timestamp: getGMT8Timestamp()
+      };
     }
-}
-
-// ============ API 連接測試 ============
-function testAPIConnection() {
-    console.log('測試 API 連接...');
-    
-    // 先測試 GET 請求
-    fetch(GOOGLE_SCRIPT_URL, { method: 'GET' })
-        .then(response => {
-            console.log('GET 測試 - 狀態:', response.status);
-            return response.text();
-        })
-        .then(text => {
-            console.log('GET 測試 - 回應:', text.substring(0, 200));
-            
-            // 然後測試 POST 請求
-            return callGoogleScript('testConnection');
-        })
-        .then(result => {
-            console.log('POST 測試 - 結果:', result);
-            if (result.success) {
-                showAlert('success', 'API 連接測試成功！');
-            } else {
-                showAlert('warning', 'API 連接測試部分成功');
-            }
-        })
-        .catch(error => {
-            console.error('API 連接測試失敗:', error);
-            showAlert('error', 'API 連接失敗: ' + error.message);
-        });
-}
-
-// ============ 頁面初始化 ============
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('頁面載入完成，開始初始化...');
-    
-    initializeApp();
-    
-    // 綁定表單事件
-    const invitationForm = document.getElementById('invitationForm');
-    const editForm = document.getElementById('editForm');
-    
-    if (invitationForm) {
-        invitationForm.addEventListener('submit', handleSubmit);
-    }
-    
-    if (editForm) {
-        editForm.addEventListener('submit', handleEditSubmit);
-    }
-    
-    // 模態框點擊背景關閉
-    const editModal = document.getElementById('editModal');
-    if (editModal) {
-        editModal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeEditModal();
-            }
-        });
-    }
-    
-    // 延遲測試 API 連接
-    setTimeout(testAPIConnection, 3000);
-});
-
-// ============ PWA功能 ============
-// 註冊Service Worker
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/invitation-app/sw.js')
-            .then(registration => {
-                console.log('Service Worker 註冊成功:', registration);
-            })
-            .catch(error => {
-                console.log('Service Worker 註冊失敗:', error);
-            });
-    });
-}
-
-// 預防iOS縮放
-document.addEventListener('touchstart', function(e) {
-    if (e.touches.length > 1) {
-        e.preventDefault();
-    }
-});
-
-let lastTouchEnd = 0;
-document.addEventListener('touchend', function(e) {
-    const now = (new Date()).getTime();
-    if (now - lastTouchEnd <= 300) {
-        e.preventDefault();
-    }
-    lastTouchEnd = now;
-}, false);
-
-// ============ 全域函數導出（供HTML呼叫） ============
-window.login = login;
-window.switchFunction = switchFunction;
-window.manualSync = manualSync;
-window.refreshInvitationList = refreshInvitationList;
-window.editInvitation = editInvitation;
-window.deleteInvitation = deleteInvitation;
-window.closeEditModal = closeEditModal;
-window.toggleCheckbox = toggleCheckbox;
-window.toggleEditCheckbox = toggleEditCheckbox;
-window.checkQuotaWarning = checkQuotaWarning;
+  }

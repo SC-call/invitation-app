@@ -123,58 +123,7 @@
                             </div>
                         </div>
                     </div>
-                    <!-- 健檢項目 -->
-                    <div class="form-section">
-                        <div class="section-title">健檢項目</div>
-                        <div class="health-checks">
-                            <div class="checkbox-item checked" onclick="toggleCheckbox('mammography')">
-                                <input type="checkbox" id="mammography" name="mammography" value="1" checked>
-                                <label for="mammography">乳攝</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('firstScreen')">
-                                <input type="checkbox" id="firstScreen" name="firstScreen" value="1">
-                                <label for="firstScreen">首篩</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('cervicalSmear')">
-                                <input type="checkbox" id="cervicalSmear" name="cervicalSmear" value="1">
-                                <label for="cervicalSmear">子抹</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('adultHealth')">
-                                <input type="checkbox" id="adultHealth" name="adultHealth" value="1">
-                                <label for="adultHealth">成健</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('hepatitis')">
-                                <input type="checkbox" id="hepatitis" name="hepatitis" value="1">
-                                <label for="hepatitis">BC肝炎</label>
-                            </div>
-                            <div class="checkbox-item" onclick="toggleCheckbox('colorectal')">
-                                <input type="checkbox" id="colorectal" name="colorectal" value="1">
-                                <label for="colorectal">大腸</label>
-                            </div>
-                        </div>
-                    </div>
                     
-                    <!-- 場次資訊 -->
-                    <div class="form-section">
-                        <div class="section-title">場次資訊</div>
-                        
-                        <div class="form-group">
-                            <label for="sessionInfo">選擇場次 *</label>
-                            <select id="sessionInfo" name="sessionInfo" required onchange="checkQuotaWarning()">
-                                <option value="">載入中...</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="session">時段 *</label>
-                            <select id="session" name="session" required onchange="checkQuotaWarning()">
-                                <option value="">選擇時段</option>
-                                <option value="早上場">早上場</option>
-                                <option value="下午場">下午場</option>
-                                <option value="晚上場">晚上場</option>
-                            </select>
-                        </div>
-                    </div>
                     
                     <!-- 備註 -->
                     <div class="form-section">
