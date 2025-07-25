@@ -1,6 +1,7 @@
 // 修正後的健檢邀約系統前端 JavaScript
 // 更新您的 Google Apps Script 部署 URL
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyStDOdIS6qdy5lT0ibMaGU6b0F7Km4-tpizyUg4Ns/dev';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxhkCskd6Emdr6Nu77sKGCjdsRdgoOX5YPnpgtrK_RXRLBhLGv5HgQ4r-PP-a4_CTB/exec';
+
 
 // 全域變數
 var currentUser = null;
