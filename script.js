@@ -436,9 +436,8 @@ function callGoogleScript(functionName, data = {}) {
     });
 }
 
-function safeGoogleScriptCall(functionName, successCallback, errorCallback, ...args) {
-    const data = args.length > 0 ? args[0] : {};
-    
+function safeGoogleScriptCall(functionName, successCallback, errorCallback, data = {}) {
+    // 移除原來的 ...args 邏輯，直接使用 data 參數
     callGoogleScript(functionName, data)
         .then(result => {
             if (successCallback) successCallback(result);
@@ -640,10 +639,10 @@ function loadUserList() {
         function(error) {
             console.error('載入用戶列表失敗:', error);
             showAlert('error', '載入用戶列表失敗：' + error);
-        }
+        },
+        {} // 空物件，getUserList 不需要參數
     );
 }
-
 function loadSessionOptions(staffName) {
     console.log('載入場次選項:', staffName);
     
@@ -659,7 +658,7 @@ function loadSessionOptions(staffName) {
             console.error('載入場次選項失敗:', error);
             showAlert('error', '載入場次選項失敗：' + error);
         },
-        staffName || ''
+        { staffName: staffName || '' }  // 正確的參數格式
     );
 }
 
@@ -692,7 +691,6 @@ function getAppointmentTypeFromSession(sessionValue) {
     }
     return '副約';
 }
-
 function login() {
     const staffName = document.getElementById('staffSelect').value;
     const password = document.getElementById('staffPassword').value;
@@ -712,13 +710,19 @@ function login() {
         return;
     }
     
+    // 修正：將參數正確打包成物件
+    const loginData = {
+        username: staffName,    // 對應 Google Apps Script 的第一個參數
+        password: password || '' // 對應 Google Apps Script 的第二個參數
+    };
+    
     safeGoogleScriptCall(
         'authenticateUser',
         function(result) {
             if (result.success) {
                 console.log('登入成功:', result.user);
                 currentUser = result.user;
-                saveLocalData(); // 儲存登入狀態
+                saveLocalData();
                 updateUserInterface();
                 loadTodayData();
                 loadSessionOptions(currentUser.name);
@@ -730,10 +734,11 @@ function login() {
         function(error) {
             showAlert('error', '登入失敗：' + error);
         },
-        staffName,
-        password
+        loginData  // 傳遞包含 username 和 password 的物件
     );
 }
+
+
 
 function updateUserInterface() {
     const userInfo = document.getElementById('userInfo');
@@ -763,7 +768,6 @@ function loadTodayData() {
     
     console.log('載入今日資料:', todayStr);
     
-    // 載入限額資料
     safeGoogleScriptCall(
         'getTodayQuota',
         function(quota) {
@@ -782,14 +786,15 @@ function loadTodayData() {
             if (elements.eveningLimit) elements.eveningLimit.textContent = quota.evening;
             if (elements.todayLimit) elements.todayLimit.textContent = quota.total;
             
-            // 更新顯示
             updateCountDisplay();
         },
         function(error) {
             console.error('載入限額失敗:', error);
         },
-        currentUser.name,
-        todayStr
+        {
+            staffName: currentUser.name,
+            date: todayStr
+        }
     );
 }
 
