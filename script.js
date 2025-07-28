@@ -1,29 +1,29 @@
-// 修正後的健檢邀約系統前端 JavaScript - GMT+8 時區版本
+// 修正後的健檢邀約系統前端 JavaScript - 台灣時區版本
 // 更新您的 Google Apps Script 部署 URL
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxhkCskd6Emdr6Nu77sKGCjdsRdgoOX5YPnpgtrK_RXRLBhLGv5HgQ4r-PP-a4_CTB/exec';
 
-// ============ GMT+8 時間處理函數 ============
+// ============ 台灣時間處理函數 ============
 /**
- * 獲取 GMT+8 時間戳記
+ * 獲取台灣時間戳記
  */
-function getGMT8Timestamp() {
+function getTaiwanTimestamp() {
     const now = new Date();
-    // 轉換為 GMT+8 時間
-    const gmt8Time = new Date(now.getTime() + (8 * 60 * 60 * 1000) - (now.getTimezoneOffset() * 60 * 1000));
-    return gmt8Time.toISOString();
+    // 轉換為台灣時間 (UTC+8)
+    const taiwanTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Taipei"}));
+    return taiwanTime.toISOString();
 }
 
 /**
- * 獲取 GMT+8 的今日字串
+ * 獲取台灣的今日字串
  */
-function getTodayStringGMT8(format) {
+function getTodayStringTaiwan(format) {
     const now = new Date();
-    // 轉換為 GMT+8 時間
-    const gmt8Time = new Date(now.getTime() + (8 * 60 * 60 * 1000) - (now.getTimezoneOffset() * 60 * 1000));
+    // 使用台灣時區
+    const taiwanTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Taipei"}));
     
-    const year = gmt8Time.getFullYear();
-    const month = String(gmt8Time.getMonth() + 1).padStart(2, '0');
-    const day = String(gmt8Time.getDate()).padStart(2, '0');
+    const year = taiwanTime.getFullYear();
+    const month = String(taiwanTime.getMonth() + 1).padStart(2, '0');
+    const day = String(taiwanTime.getDate()).padStart(2, '0');
     
     if (format === 'MMDD') {
         return month + day;
@@ -32,29 +32,29 @@ function getTodayStringGMT8(format) {
 }
 
 /**
- * 獲取 GMT+8 的年份
+ * 獲取台灣的年份
  */
-function getYearGMT8() {
+function getYearTaiwan() {
     const now = new Date();
-    const gmt8Time = new Date(now.getTime() + (8 * 60 * 60 * 1000) - (now.getTimezoneOffset() * 60 * 1000));
-    return gmt8Time.getFullYear().toString();
+    const taiwanTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Taipei"}));
+    return taiwanTime.getFullYear().toString();
 }
 
 /**
- * 格式化 GMT+8 時間顯示
+ * 格式化台灣時間顯示
  */
-function formatGMT8Time(timestamp) {
+function formatTaiwanTime(timestamp) {
     if (!timestamp) return '';
     
     try {
         const date = new Date(timestamp);
-        // 轉換為 GMT+8 顯示
-        const gmt8Time = new Date(date.getTime() + (8 * 60 * 60 * 1000) - (date.getTimezoneOffset() * 60 * 1000));
+        // 轉換為台灣時區顯示
+        const taiwanTime = new Date(date.toLocaleString("en-US", {timeZone: "Asia/Taipei"}));
         
-        const month = String(gmt8Time.getMonth() + 1).padStart(2, '0');
-        const day = String(gmt8Time.getDate()).padStart(2, '0');
-        const hours = String(gmt8Time.getHours()).padStart(2, '0');
-        const minutes = String(gmt8Time.getMinutes()).padStart(2, '0');
+        const month = String(taiwanTime.getMonth() + 1).padStart(2, '0');
+        const day = String(taiwanTime.getDate()).padStart(2, '0');
+        const hours = String(taiwanTime.getHours()).padStart(2, '0');
+        const minutes = String(taiwanTime.getMinutes()).padStart(2, '0');
         
         return `${month}/${day} ${hours}:${minutes}`;
     } catch (error) {
@@ -107,8 +107,8 @@ const SYNC_STATUS = {
 // ============ 初始化和事件監聽 ============
 function initializeApp() {
     console.log('初始化應用程式...');
-    console.log('當前 GMT+8 時間:', getGMT8Timestamp());
-    console.log('今日日期 (GMT+8):', getTodayStringGMT8());
+    console.log('當前台灣時間:', getTaiwanTimestamp());
+    console.log('今日日期 (台灣):', getTodayStringTaiwan());
     
     // 載入本地資料
     loadLocalData();
@@ -208,7 +208,7 @@ function saveLocalData() {
         if (currentUser) {
             localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
         }
-        localStorage.setItem(STORAGE_KEYS.LAST_SYNC, getGMT8Timestamp()); // 使用 GMT+8 時間
+        localStorage.setItem(STORAGE_KEYS.LAST_SYNC, getTaiwanTimestamp()); // 使用台灣時間
     } catch (error) {
         console.error('儲存本地資料失敗:', error);
         showAlert('error', '本地儲存失敗，請檢查儲存空間');
@@ -218,7 +218,7 @@ function saveLocalData() {
 function addInvitationToLocal(invitationData) {
     // 生成本地ID
     const localId = 'LOCAL_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    const timestamp = getGMT8Timestamp(); // 使用 GMT+8 時間戳記
+    const timestamp = getTaiwanTimestamp(); // 使用台灣時間戳記
     
     const invitation = {
         id: localId,
@@ -226,8 +226,8 @@ function addInvitationToLocal(invitationData) {
         serverId: null, // 服務器ID，同步後填入
         syncStatus: SYNC_STATUS.PENDING,
         syncError: null,
-        createTime: timestamp, // GMT+8 時間
-        lastModified: timestamp, // GMT+8 時間
+        createTime: timestamp, // 台灣時間
+        lastModified: timestamp, // 台灣時間
         
         // 邀約資料
         name: invitationData.name,
@@ -247,8 +247,8 @@ function addInvitationToLocal(invitationData) {
         // 解析場次資訊
         ...parseSessionInfo(invitationData.sessionInfo),
         
-        // 邀約日期 (GMT+8)
-        inviteDate: getTodayStringGMT8('MMDD')
+        // 邀約日期 (台灣時間)
+        inviteDate: getTodayStringTaiwan('MMDD')
     };
     
     localInvitations.unshift(invitation); // 加到開頭
@@ -256,7 +256,7 @@ function addInvitationToLocal(invitationData) {
     updateLocalCounts();
     updateLocalStats();
     
-    console.log('新增本地邀約 (GMT+8):', invitation.name, '時間:', timestamp);
+    console.log('新增本地邀約 (台灣時間):', invitation.name, '時間:', timestamp);
     return invitation;
 }
 
@@ -265,11 +265,11 @@ function updateInvitationInLocal(localId, updateData) {
     if (index === -1) return false;
     
     const invitation = localInvitations[index];
-    const timestamp = getGMT8Timestamp(); // 使用 GMT+8 時間戳記
+    const timestamp = getTaiwanTimestamp(); // 使用台灣時間戳記
     
     // 更新資料
     Object.assign(invitation, updateData, {
-        lastModified: timestamp, // GMT+8 時間
+        lastModified: timestamp, // 台灣時間
         syncStatus: invitation.syncStatus === SYNC_STATUS.SYNCED ? SYNC_STATUS.PENDING : invitation.syncStatus
     });
     
@@ -282,7 +282,7 @@ function updateInvitationInLocal(localId, updateData) {
     updateLocalCounts();
     updateLocalStats();
     
-    console.log('更新本地邀約 (GMT+8):', invitation.name, '時間:', timestamp);
+    console.log('更新本地邀約 (台灣時間):', invitation.name, '時間:', timestamp);
     return true;
 }
 
@@ -296,7 +296,7 @@ function deleteInvitationFromLocal(localId) {
     updateLocalCounts();
     updateLocalStats();
     
-    console.log('刪除本地邀約 (GMT+8):', invitation.name, '時間:', getGMT8Timestamp());
+    console.log('刪除本地邀約 (台灣時間):', invitation.name, '時間:', getTaiwanTimestamp());
     return true;
 }
 
@@ -308,7 +308,7 @@ function parseSessionInfo(sessionInfo) {
             region: parts[1],
             location: parts[2],
             appointmentType: parts[3],
-            year: getYearGMT8() // 使用 GMT+8 年份
+            year: getYearTaiwan() // 使用台灣年份
         };
     }
     return {
@@ -316,13 +316,13 @@ function parseSessionInfo(sessionInfo) {
         region: '',
         location: '',
         appointmentType: '副約',
-        year: getYearGMT8() // 使用 GMT+8 年份
+        year: getYearTaiwan() // 使用台灣年份
     };
 }
 
 // ============ 計數管理 ============
 function updateLocalCounts() {
-    const todayStr = getTodayStringGMT8('MMDD'); // 使用 GMT+8 的今日
+    const todayStr = getTodayStringTaiwan('MMDD'); // 使用台灣的今日
     const counts = {
         morning: 0,
         afternoon: 0,
@@ -399,7 +399,7 @@ function updateSessionQuotaDisplay() {
 }
 
 function updateLocalStats() {
-    const todayStr = getTodayStringGMT8('MMDD'); // 使用 GMT+8 的今日
+    const todayStr = getTodayStringTaiwan('MMDD'); // 使用台灣的今日
     let localCount = 0;
     let pendingCount = 0;
     let syncedCount = 0;
@@ -435,8 +435,8 @@ function callGoogleScript(functionName, data = {}) {
         const payload = {
             function: functionName,
             parameters: data,
-            timestamp: getGMT8Timestamp(), // 加入 GMT+8 時間戳記
-            timezone: 'GMT+8'
+            timestamp: getTaiwanTimestamp(), // 加入台灣時間戳記
+            timezone: 'Asia/Taipei'
         };
         
         // 使用 FormData 避免 CORS 預檢請求
@@ -514,7 +514,7 @@ function autoSync() {
     );
     
     if (pendingInvitations.length > 0) {
-        console.log('開始自動同步 (GMT+8):', pendingInvitations.length, '筆資料，時間:', getGMT8Timestamp());
+        console.log('開始自動同步 (台灣時間):', pendingInvitations.length, '筆資料，時間:', getTaiwanTimestamp());
         syncToCloud(pendingInvitations);
     }
 }
@@ -539,7 +539,7 @@ function manualSync() {
         return;
     }
     
-    console.log('開始手動同步 (GMT+8):', pendingInvitations.length, '筆資料，時間:', getGMT8Timestamp());
+    console.log('開始手動同步 (台灣時間):', pendingInvitations.length, '筆資料，時間:', getTaiwanTimestamp());
     syncToCloud(pendingInvitations);
 }
 
@@ -560,7 +560,7 @@ function syncToCloud(invitations) {
     // 標記為同步中
     invitations.forEach(function(inv) {
         inv.syncStatus = SYNC_STATUS.SYNCING;
-        inv.lastModified = getGMT8Timestamp(); // 更新為 GMT+8 時間
+        inv.lastModified = getTaiwanTimestamp(); // 更新為台灣時間
     });
     
     updateInvitationListDisplay();
@@ -586,13 +586,13 @@ function batchSyncInvitations(invitations, index) {
                 invitation.syncStatus = SYNC_STATUS.SYNCED;
                 invitation.serverId = result.invitationId || invitation.localId;
                 invitation.syncError = null;
-                invitation.lastModified = getGMT8Timestamp(); // 更新為 GMT+8 時間
-                console.log('同步成功 (GMT+8):', invitation.name, '時間:', invitation.lastModified);
+                invitation.lastModified = getTaiwanTimestamp(); // 更新為台灣時間
+                console.log('同步成功 (台灣時間):', invitation.name, '時間:', invitation.lastModified);
             } else {
                 invitation.syncStatus = SYNC_STATUS.ERROR;
                 invitation.syncError = result.message || '同步失敗';
-                invitation.lastModified = getGMT8Timestamp(); // 更新為 GMT+8 時間
-                console.error('同步失敗 (GMT+8):', invitation.name, result.message);
+                invitation.lastModified = getTaiwanTimestamp(); // 更新為台灣時間
+                console.error('同步失敗 (台灣時間):', invitation.name, result.message);
             }
             
             // 繼續下一個
@@ -603,8 +603,8 @@ function batchSyncInvitations(invitations, index) {
         .catch(error => {
             invitation.syncStatus = SYNC_STATUS.ERROR;
             invitation.syncError = error.toString();
-            invitation.lastModified = getGMT8Timestamp(); // 更新為 GMT+8 時間
-            console.error('同步錯誤 (GMT+8):', invitation.name, error);
+            invitation.lastModified = getTaiwanTimestamp(); // 更新為台灣時間
+            console.error('同步錯誤 (台灣時間):', invitation.name, error);
             
             // 繼續下一個
             setTimeout(function() {
@@ -631,12 +631,12 @@ function finishSync() {
     const errorCount = localInvitations.filter(inv => inv.syncStatus === SYNC_STATUS.ERROR).length;
     
     if (errorCount === 0) {
-        showSyncStatus('同步完成！共同步 ' + syncedCount + ' 筆資料 (GMT+8: ' + formatGMT8Time(getGMT8Timestamp()) + ')', 'success');
+        showSyncStatus('同步完成！共同步 ' + syncedCount + ' 筆資料 (台灣時間: ' + formatTaiwanTime(getTaiwanTimestamp()) + ')', 'success');
     } else {
         showSyncStatus('同步完成，' + syncedCount + ' 筆成功，' + errorCount + ' 筆失敗', 'warning');
     }
     
-    console.log('同步完成 (GMT+8)，成功:', syncedCount, '失敗:', errorCount, '時間:', getGMT8Timestamp());
+    console.log('同步完成 (台灣時間)，成功:', syncedCount, '失敗:', errorCount, '時間:', getTaiwanTimestamp());
 }
 
 function convertToServerFormat(invitation) {
@@ -655,7 +655,7 @@ function convertToServerFormat(invitation) {
         notes: invitation.notes,
         inviter: invitation.inviter,
         localId: invitation.localId,
-        clientTimestamp: getGMT8Timestamp() // 加入客戶端 GMT+8 時間戳記
+        clientTimestamp: getTaiwanTimestamp() // 加入客戶端台灣時間戳記
     };
 }
 
@@ -762,7 +762,7 @@ function login() {
         return;
     }
     
-    console.log('嘗試登入 (GMT+8):', staffName, '時間:', getGMT8Timestamp());
+    console.log('嘗試登入 (台灣時間):', staffName, '時間:', getTaiwanTimestamp());
     
     const selectedOption = document.querySelector('#staffSelect option[value="' + staffName + '"]');
     const hasPassword = selectedOption && selectedOption.dataset.hasPassword === 'true';
@@ -776,17 +776,17 @@ function login() {
     const loginData = {
         username: staffName,    // 對應 Google Apps Script 的第一個參數
         password: password || '', // 對應 Google Apps Script 的第二個參數
-        clientTimezone: 'GMT+8',
-        loginTime: getGMT8Timestamp()
+        clientTimezone: 'Asia/Taipei',
+        loginTime: getTaiwanTimestamp()
     };
     
     safeGoogleScriptCall(
         'authenticateUser',
         function(result) {
             if (result.success) {
-                console.log('登入成功 (GMT+8):', result.user, '時間:', getGMT8Timestamp());
+                console.log('登入成功 (台灣時間):', result.user, '時間:', getTaiwanTimestamp());
                 currentUser = result.user;
-                currentUser.loginTime = getGMT8Timestamp(); // 記錄登入時間
+                currentUser.loginTime = getTaiwanTimestamp(); // 記錄登入時間
                 saveLocalData();
                 updateUserInterface();
                 loadTodayData();
@@ -814,7 +814,7 @@ function updateUserInterface() {
     if (userInfo) {
         userInfo.classList.add('logged-in');
         const loginTimeDisplay = currentUser.loginTime ? 
-            ' (登入: ' + formatGMT8Time(currentUser.loginTime) + ')' : '';
+            ' (登入: ' + formatTaiwanTime(currentUser.loginTime) + ')' : '';
         userInfo.innerHTML = '<div><div class="user-name">' + currentUser.name + loginTimeDisplay + '</div></div>';
     }
     
@@ -826,14 +826,14 @@ function updateUserInterface() {
 }
 
 function loadTodayData() {
-    const todayGMT8 = getTodayStringGMT8(); // 使用 GMT+8 的今日
+    const todayTaiwan = getTodayStringTaiwan(); // 使用台灣的今日
     
-    console.log('載入今日資料 (GMT+8):', todayGMT8);
+    console.log('載入今日資料 (台灣時間):', todayTaiwan);
     
     safeGoogleScriptCall(
         'getTodayQuota',
         function(quota) {
-            console.log('限額資料載入成功 (GMT+8):', quota);
+            console.log('限額資料載入成功 (台灣時間):', quota);
             quotaLimits = quota;
             
             const elements = {
@@ -855,7 +855,7 @@ function loadTodayData() {
         },
         {
             staffName: currentUser.name,
-            date: todayGMT8
+            date: todayTaiwan
         }
     );
 }
@@ -963,7 +963,7 @@ function switchFunction(func) {
 function refreshInvitationList() {
     loadInvitationList();
     updateLocalStats();
-    showAlert('success', '名單已更新 (GMT+8: ' + formatGMT8Time(getGMT8Timestamp()) + ')');
+    showAlert('success', '名單已更新 (台灣時間: ' + formatTaiwanTime(getTaiwanTimestamp()) + ')');
 }
 
 function loadInvitationList() {
@@ -971,7 +971,7 @@ function loadInvitationList() {
     if (!listContainer) return;
     
     // 直接從本地資料載入
-    const todayStr = getTodayStringGMT8('MMDD'); // 使用 GMT+8 的今日
+    const todayStr = getTodayStringTaiwan('MMDD'); // 使用台灣的今日
     const todayInvitations = localInvitations.filter(function(inv) {
         return inv.inviteDate === todayStr && 
                (!currentUser || inv.inviter === currentUser.name || currentUser.name === '系統管理員');
@@ -997,7 +997,7 @@ function renderInvitationItem(invitation) {
     const appointmentTypeClass = invitation.appointmentType === '主約' ? 'primary' : 'secondary';
     const syncIndicator = getSyncIndicatorHtml(invitation);
     const timeDisplay = invitation.createTime ? 
-        ' (建立: ' + formatGMT8Time(invitation.createTime) + ')' : '';
+        ' (建立: ' + formatTaiwanTime(invitation.createTime) + ')' : '';
     
     return '<div class="invitation-item ' + invitation.syncStatus + '">' +
         syncIndicator +
@@ -1022,7 +1022,7 @@ function renderInvitationItem(invitation) {
         '<div class="health-items">' + healthItems + '</div>' +
         (invitation.notes ? '<div style="margin-top: 6px; font-size: 0.8em; color: #666;">備註: ' + invitation.notes + '</div>' : '') +
         (invitation.syncError ? '<div style="margin-top: 6px; font-size: 0.75em; color: #dc3545;">同步錯誤: ' + invitation.syncError + '</div>' : '') +
-        (invitation.lastModified ? '<div style="margin-top: 4px; font-size: 0.7em; color: #999;">最後修改: ' + formatGMT8Time(invitation.lastModified) + '</div>' : '') +
+        (invitation.lastModified ? '<div style="margin-top: 4px; font-size: 0.7em; color: #999;">最後修改: ' + formatTaiwanTime(invitation.lastModified) + '</div>' : '') +
     '</div>';
 }
 
@@ -1110,7 +1110,7 @@ function handleSubmit(e) {
         session: session,
         notes: document.getElementById('notes').value.trim(),
         inviter: currentUser.name,
-        submitTime: getGMT8Timestamp() // 加入提交時間戳記
+        submitTime: getTaiwanTimestamp() // 加入提交時間戳記
     };
     
     if (!formData.name || !formData.phone1 || !formData.sessionInfo || !formData.session) {
@@ -1138,7 +1138,7 @@ function submitInvitation(data) {
         submitBtn.textContent = '提交中...';
     }
     
-    showSubmitStatus('processing', '正在儲存邀約資料... (GMT+8: ' + formatGMT8Time(getGMT8Timestamp()) + ')');
+    showSubmitStatus('processing', '正在儲存邀約資料... (台灣時間: ' + formatTaiwanTime(getTaiwanTimestamp()) + ')');
     
     try {
         // 先保存到本地
@@ -1155,7 +1155,7 @@ function submitInvitation(data) {
         }
         
     } catch (error) {
-        console.error('提交邀約失敗 (GMT+8):', error, '時間:', getGMT8Timestamp());
+        console.error('提交邀約失敗 (台灣時間):', error, '時間:', getTaiwanTimestamp());
         showSubmitStatus('error', '儲存失敗：' + error.toString());
     } finally {
         if (submitBtn) {
@@ -1291,12 +1291,12 @@ function handleEditSubmit(e) {
         sessionInfo: sessionInfo,
         session: session,
         notes: document.getElementById('editNotes').value.trim(),
-        editTime: getGMT8Timestamp() // 加入編輯時間戳記
+        editTime: getTaiwanTimestamp() // 加入編輯時間戳記
     };
     
     if (updateInvitationInLocal(localId, updateData)) {
         closeEditModal();
-        showAlert('success', '邀約資料已更新！(GMT+8: ' + formatGMT8Time(getGMT8Timestamp()) + ')');
+        showAlert('success', '邀約資料已更新！(台灣時間: ' + formatTaiwanTime(getTaiwanTimestamp()) + ')');
         refreshInvitationList();
         
         // 如果在線，嘗試同步更新的資料
@@ -1323,7 +1323,7 @@ function deleteInvitation(localId) {
     if (!confirm('確定要刪除這筆邀約記錄嗎？')) return;
     
     if (deleteInvitationFromLocal(localId)) {
-        showAlert('success', '邀約記錄已刪除！(GMT+8: ' + formatGMT8Time(getGMT8Timestamp()) + ')');
+        showAlert('success', '邀約記錄已刪除！(台灣時間: ' + formatTaiwanTime(getTaiwanTimestamp()) + ')');
         refreshInvitationList();
     } else {
         showAlert('error', '刪除失敗，找不到邀約記錄');
@@ -1397,7 +1397,7 @@ function updateInvitationListDisplay() {
 
 // ============ API 連接測試 ============
 function testAPIConnection() {
-    console.log('測試 API 連接 (GMT+8)...', getGMT8Timestamp());
+    console.log('測試 API 連接 (台灣時間)...', getTaiwanTimestamp());
     
     // 先測試 GET 請求
     fetch(GOOGLE_SCRIPT_URL, { method: 'GET' })
@@ -1410,27 +1410,27 @@ function testAPIConnection() {
             
             // 然後測試 POST 請求
             return callGoogleScript('testConnection', { 
-                testTime: getGMT8Timestamp(),
-                timezone: 'GMT+8'
+                testTime: getTaiwanTimestamp(),
+                timezone: 'Asia/Taipei'
             });
         })
         .then(result => {
             console.log('POST 測試 - 結果:', result);
             if (result.success) {
-                showAlert('success', 'API 連接測試成功！(GMT+8: ' + formatGMT8Time(getGMT8Timestamp()) + ')');
+                showAlert('success', 'API 連接測試成功！(台灣時間: ' + formatTaiwanTime(getTaiwanTimestamp()) + ')');
             } else {
                 showAlert('warning', 'API 連接測試部分成功');
             }
         })
         .catch(error => {
-            console.error('API 連接測試失敗 (GMT+8):', error, '時間:', getGMT8Timestamp());
+            console.error('API 連接測試失敗 (台灣時間):', error, '時間:', getTaiwanTimestamp());
             showAlert('error', 'API 連接失敗: ' + error.message);
         });
 }
 
 // ============ 頁面初始化 ============
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('頁面載入完成，開始初始化... (GMT+8: ' + getGMT8Timestamp() + ')');
+    console.log('頁面載入完成，開始初始化... (台灣時間: ' + getTaiwanTimestamp() + ')');
     
     initializeApp();
     
@@ -1466,10 +1466,10 @@ if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
         navigator.serviceWorker.register('/invitation-app/sw.js')
             .then(registration => {
-                console.log('Service Worker 註冊成功 (GMT+8):', registration, '時間:', getGMT8Timestamp());
+                console.log('Service Worker 註冊成功 (台灣時間):', registration, '時間:', getTaiwanTimestamp());
             })
             .catch(error => {
-                console.log('Service Worker 註冊失敗 (GMT+8):', error, '時間:', getGMT8Timestamp());
+                console.log('Service Worker 註冊失敗 (台灣時間):', error, '時間:', getTaiwanTimestamp());
             });
     });
 }
@@ -1502,10 +1502,10 @@ window.toggleCheckbox = toggleCheckbox;
 window.toggleEditCheckbox = toggleEditCheckbox;
 window.checkQuotaWarning = checkQuotaWarning;
 
-// 導出 GMT+8 時間函數供調試使用
-window.getGMT8Timestamp = getGMT8Timestamp;
-window.getTodayStringGMT8 = getTodayStringGMT8;
-window.formatGMT8Time = formatGMT8Time;
+// 導出台灣時間函數供調試使用
+window.getTaiwanTimestamp = getTaiwanTimestamp;
+window.getTodayStringTaiwan = getTodayStringTaiwan;
+window.formatTaiwanTime = formatTaiwanTime;
 
 // ============ 調試和監控功能 ============
 /**
@@ -1513,27 +1513,27 @@ window.formatGMT8Time = formatGMT8Time;
  */
 function debugTimezone() {
     const localTime = new Date();
-    const gmt8Time = getGMT8Timestamp();
-    const todayGMT8 = getTodayStringGMT8();
-    const todayMMDD = getTodayStringGMT8('MMDD');
+    const taiwanTime = getTaiwanTimestamp();
+    const todayTaiwan = getTodayStringTaiwan();
+    const todayMMDD = getTodayStringTaiwan('MMDD');
     
     console.log('=== 時區調試資訊 ===');
     console.log('本地時間:', localTime.toString());
     console.log('本地時間 ISO:', localTime.toISOString());
-    console.log('GMT+8 時間戳記:', gmt8Time);
-    console.log('GMT+8 今日 (YYYYMMDD):', todayGMT8);
-    console.log('GMT+8 今日 (MMDD):', todayMMDD);
-    console.log('格式化顯示:', formatGMT8Time(gmt8Time));
+    console.log('台灣時間戳記:', taiwanTime);
+    console.log('台灣今日 (YYYYMMDD):', todayTaiwan);
+    console.log('台灣今日 (MMDD):', todayMMDD);
+    console.log('格式化顯示:', formatTaiwanTime(taiwanTime));
     console.log('本地時區偏移 (分鐘):', localTime.getTimezoneOffset());
     console.log('==================');
     
     return {
         localTime: localTime.toString(),
         localTimeISO: localTime.toISOString(),
-        gmt8Timestamp: gmt8Time,
-        todayGMT8: todayGMT8,
+        taiwanTimestamp: taiwanTime,
+        todayTaiwan: todayTaiwan,
         todayMMDD: todayMMDD,
-        formatted: formatGMT8Time(gmt8Time),
+        formatted: formatTaiwanTime(taiwanTime),
         timezoneOffset: localTime.getTimezoneOffset()
     };
 }
@@ -1542,7 +1542,7 @@ function debugTimezone() {
  * 數據統計函數
  */
 function getLocalStats() {
-    const todayStr = getTodayStringGMT8('MMDD');
+    const todayStr = getTodayStringTaiwan('MMDD');
     const stats = {
         totalInvitations: localInvitations.length,
         todayInvitations: localInvitations.filter(inv => inv.inviteDate === todayStr).length,
@@ -1552,8 +1552,8 @@ function getLocalStats() {
         currentUser: currentUser ? currentUser.name : '未登入',
         isOnline: isOnline,
         syncInProgress: syncInProgress,
-        currentTime: getGMT8Timestamp(),
-        timezone: 'GMT+8'
+        currentTime: getTaiwanTimestamp(),
+        timezone: 'Asia/Taipei'
     };
     
     console.log('=== 本地數據統計 ===');
@@ -1565,7 +1565,7 @@ function getLocalStats() {
     console.log('當前用戶:', stats.currentUser);
     console.log('網路狀態:', stats.isOnline ? '在線' : '離線');
     console.log('同步狀態:', stats.syncInProgress ? '進行中' : '閒置');
-    console.log('當前時間 (GMT+8):', stats.currentTime);
+    console.log('當前時間 (台灣):', stats.currentTime);
     console.log('==================');
     
     return stats;
@@ -1589,7 +1589,7 @@ function clearLocalData(confirm = false) {
         localInvitations = [];
         currentUser = null;
         
-        console.log('本地數據已清除 (GMT+8):', getGMT8Timestamp());
+        console.log('本地數據已清除 (台灣時間):', getTaiwanTimestamp());
         
         // 重新載入頁面
         if (typeof location !== 'undefined') {
@@ -1627,7 +1627,7 @@ function forceSyncAll() {
         return true;
     }
     
-    console.log('強制同步所有數據 (GMT+8):', allPendingInvitations.length, '筆，時間:', getGMT8Timestamp());
+    console.log('強制同步所有數據 (台灣時間):', allPendingInvitations.length, '筆，時間:', getTaiwanTimestamp());
     syncToCloud(allPendingInvitations);
     return true;
 }
@@ -1639,8 +1639,8 @@ function exportData() {
     const exportData = {
         invitations: localInvitations,
         currentUser: currentUser,
-        exportTime: getGMT8Timestamp(),
-        timezone: 'GMT+8',
+        exportTime: getTaiwanTimestamp(),
+        timezone: 'Asia/Taipei',
         version: '2.1.0'
     };
     
@@ -1650,10 +1650,10 @@ function exportData() {
     // 創建下載連結
     const link = document.createElement('a');
     link.href = URL.createObjectURL(dataBlob);
-    link.download = '健檢邀約數據_' + getTodayStringGMT8() + '.json';
+    link.download = '健檢邀約數據_' + getTodayStringTaiwan() + '.json';
     link.click();
     
-    console.log('數據已導出 (GMT+8):', getGMT8Timestamp());
+    console.log('數據已導出 (台灣時間):', getTaiwanTimestamp());
     return exportData;
 }
 
@@ -1668,8 +1668,8 @@ function systemHealthCheck() {
         networkStatus: isOnline,
         serviceWorker: 'serviceWorker' in navigator,
         notifications: 'Notification' in window,
-        timestamp: getGMT8Timestamp(),
-        timezone: 'GMT+8'
+        timestamp: getTaiwanTimestamp(),
+        timezone: 'Asia/Taipei'
     };
     
     try {
@@ -1685,12 +1685,12 @@ function systemHealthCheck() {
     callGoogleScript('testConnection', { healthCheck: true })
         .then(result => {
             health.apiConnection = result.success;
-            console.log('系統健康檢查完成 (GMT+8):', health);
+            console.log('系統健康檢查完成 (台灣時間):', health);
         })
         .catch(error => {
             health.apiConnection = false;
             console.error('API 連接測試失敗:', error);
-            console.log('系統健康檢查完成 (GMT+8):', health);
+            console.log('系統健康檢查完成 (台灣時間):', health);
         });
     
     return health;
@@ -1704,8 +1704,8 @@ window.forceSyncAll = forceSyncAll;
 window.exportData = exportData;
 window.systemHealthCheck = systemHealthCheck;
 
-console.log('=== 健檢邀約系統 GMT+8 版本載入完成 ===');
-console.log('當前時間 (GMT+8):', getGMT8Timestamp());
+console.log('=== 健檢邀約系統 台灣時區版本載入完成 ===');
+console.log('當前時間 (台灣):', getTaiwanTimestamp());
 console.log('可用調試函數:', [
     'debugTimezone()', 
     'getLocalStats()', 
