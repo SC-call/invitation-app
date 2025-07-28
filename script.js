@@ -8,9 +8,30 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxhkCskd6Emd
  */
 function getTaiwanTimestamp() {
     const now = new Date();
-    // 轉換為台灣時間 (UTC+8)
-    const taiwanTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Taipei"}));
-    return taiwanTime.toISOString();
+    // 獲取台灣時間字串，然後重新建立 Date 物件
+    const taiwanTimeString = now.toLocaleString("en-US", {
+        timeZone: "Asia/Taipei",
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+    
+    // 解析時間字串並格式化為 ISO 格式 (但保持台灣時間)
+    const taiwanTime = new Date(taiwanTimeString);
+    const year = taiwanTime.getFullYear();
+    const month = String(taiwanTime.getMonth() + 1).padStart(2, '0');
+    const day = String(taiwanTime.getDate()).padStart(2, '0');
+    const hours = String(taiwanTime.getHours()).padStart(2, '0');
+    const minutes = String(taiwanTime.getMinutes()).padStart(2, '0');
+    const seconds = String(taiwanTime.getSeconds()).padStart(2, '0');
+    const milliseconds = String(taiwanTime.getMilliseconds()).padStart(3, '0');
+    
+    // 返回台灣時間的 ISO 格式字串，加上 +08:00 時區標識
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+08:00`;
 }
 
 /**
@@ -47,16 +68,27 @@ function formatTaiwanTime(timestamp) {
     if (!timestamp) return '';
     
     try {
+        // 如果時間戳記包含時區資訊，直接解析
         const date = new Date(timestamp);
-        // 轉換為台灣時區顯示
-        const taiwanTime = new Date(date.toLocaleString("en-US", {timeZone: "Asia/Taipei"}));
         
-        const month = String(taiwanTime.getMonth() + 1).padStart(2, '0');
-        const day = String(taiwanTime.getDate()).padStart(2, '0');
-        const hours = String(taiwanTime.getHours()).padStart(2, '0');
-        const minutes = String(taiwanTime.getMinutes()).padStart(2, '0');
+        // 使用台灣時區格式化顯示
+        const taiwanTimeString = date.toLocaleString("en-US", {
+            timeZone: "Asia/Taipei",
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
         
-        return `${month}/${day} ${hours}:${minutes}`;
+        // 解析格式化後的字串
+        const parts = taiwanTimeString.split(', ');
+        const datePart = parts[0]; // MM/DD/YYYY
+        const timePart = parts[1]; // HH:MM
+        
+        const [month, day] = datePart.split('/');
+        
+        return `${month}/${day} ${timePart}`;
     } catch (error) {
         console.error('時間格式化錯誤:', error);
         return timestamp;
