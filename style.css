@@ -143,11 +143,6 @@ body {
     color: #155724;
 }
 
-.sync-status.info {
-    background: #d1ecf1;
-    color: #0c5460;
-}
-
 .sync-status.warning {
     background: #fff3cd;
     color: #856404;
@@ -304,7 +299,7 @@ body {
     padding: 12px;
     border: 2px solid #e0e0e0;
     border-radius: 6px;
-    font-size: 16px; /* 防止iOS縮放 */
+    font-size: 16px;
     transition: all 0.3s ease;
     touch-action: manipulation;
     min-height: 44px;
@@ -389,6 +384,9 @@ body {
     transition: all 0.3s ease;
     touch-action: manipulation;
     min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn:hover {
@@ -397,15 +395,26 @@ body {
 }
 
 .btn:disabled {
-    background: #ccc !important;
+    background: #6c757d !important;
     cursor: not-allowed !important;
     transform: none !important;
     box-shadow: none !important;
 }
 
 .btn-secondary {
-    background: #6c757d;
-    margin-bottom: 8px;
+    background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+}
+
+.btn-secondary:hover {
+    box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+}
+
+.btn-sync {
+    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+}
+
+.btn-sync:hover:not(:disabled) {
+    box-shadow: 0 4px 12px rgba(23, 162, 184, 0.3);
 }
 
 .submit-status {
@@ -444,13 +453,6 @@ body {
     margin-bottom: 10px;
     font-size: 0.85em;
     display: none;
-}
-
-.quota-warning.blocking {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-    font-weight: bold;
 }
 
 .alert {
@@ -498,7 +500,6 @@ body {
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-/* 同步狀態標記 */
 .invitation-item.pending {
     border-left: 4px solid #ffc107;
 }
@@ -710,21 +711,13 @@ body {
     color: #666;
 }
 
-/* 批次同步按鈕 */
+/* 同步控制按鈕 - 修正版 */
 .sync-controls {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-}
-
-.btn-sync {
-    background: #17a2b8;
-    color: white;
-    flex: 1;
-}
-
-.btn-sync:disabled {
-    background: #6c757d;
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 12px;
+    margin-bottom: 15px;
+    align-items: stretch;
 }
 
 /* 統計資訊 */
@@ -749,11 +742,11 @@ body {
 
 /* 載入動畫 */
 .loading-spinner {
-    border: 2px solid #f3f3f3;
-    border-top: 2px solid #4285f4;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top: 2px solid white;
     border-radius: 50%;
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     animation: spin 1s linear infinite;
     display: inline-block;
     margin-right: 8px;
@@ -768,124 +761,20 @@ body {
 @media (display-mode: standalone) {
     body {
         padding-top: max(20px, env(safe-area-inset-top));
-        user-select: none; /* 防止在獨立模式下選取文字 */
+        user-select: none;
     }
     
     .header {
         padding-top: 20px;
     }
     
-    /* 隱藏瀏覽器相關的元素 */
     .pwa-install-prompt {
         display: none !important;
     }
 }
 
-/* 暗色模式支援 */
-@media (prefers-color-scheme: dark) {
-    body {
-        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-    }
-    
-    .container {
-        background: #2c3e50;
-        color: #ecf0f1;
-    }
-    
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-        background: #34495e;
-        border-color: #5d6d7e;
-        color: #ecf0f1;
-    }
-    
-    .checkbox-item {
-        background: #34495e;
-        border-color: #5d6d7e;
-    }
-    
-    .invitation-item {
-        background: #34495e;
-        border-color: #5d6d7e;
-    }
-    
-    .detail-item {
-        background: #5d6d7e;
-    }
-    
-    .local-stats {
-        background: #34495e;
-        border-color: #5d6d7e;
-    }
-}
-
-/* 高對比度模式支援 */
-@media (prefers-contrast: high) {
-    .btn {
-        border: 2px solid #000;
-    }
-    
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-        border: 2px solid #000;
-    }
-    
-    .checkbox-item {
-        border: 2px solid #000;
-    }
-}
-
-/* 減少動畫偏好 */
-@media (prefers-reduced-motion: reduce) {
-    * {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-    }
-    
-    .loading-spinner {
-        animation: none;
-        border-top-color: transparent;
-    }
-}
-
-/* 列印樣式 */
-@media print {
-    body {
-        background: white;
-        color: black;
-    }
-    
-    .container {
-        box-shadow: none;
-        border: 1px solid #000;
-    }
-    
-    .header {
-        background: white !important;
-        color: black !important;
-        border-bottom: 2px solid #000;
-    }
-    
-    .pwa-install-prompt,
-    .sync-status,
-    .btn,
-    .btn-small,
-    .sync-controls {
-        display: none !important;
-    }
-    
-    .invitation-item {
-        border: 1px solid #000;
-        break-inside: avoid;
-        margin-bottom: 10px;
-    }
-}
-
-/* 響應式設計 */
-@media (max-width: 480px) {
+/* 響應式設計 - 手機版 */
+@media (max-width: 768px) {
     body {
         padding: 5px;
     }
@@ -918,7 +807,8 @@ body {
     }
 
     .sync-controls {
-        flex-direction: column;
+        grid-template-columns: 1fr;
+        gap: 8px;
     }
     
     .invitation-details {
@@ -934,27 +824,17 @@ body {
         gap: 8px;
         text-align: center;
     }
-}
-
-/* 平板電腦樣式 */
-@media (min-width: 481px) and (max-width: 768px) {
-    .container {
-        max-width: 600px;
-    }
     
-    .health-checks {
-        grid-template-columns: repeat(4, 1fr);
-    }
-    
-    .invitation-details {
-        grid-template-columns: repeat(2, 1fr);
+    .btn {
+        min-height: 48px;
+        font-size: 15px;
     }
 }
 
-/* 桌面版樣式 */
+/* 電腦版 */
 @media (min-width: 769px) {
     .container {
-        max-width: 700px;
+        max-width: 600px;
     }
     
     .health-checks {
@@ -966,110 +846,11 @@ body {
     }
     
     .sync-controls {
-        max-width: 300px;
-        margin: 0 auto 12px;
-    }
-}
-
-/* 橫向模式優化 */
-@media (orientation: landscape) and (max-height: 500px) {
-    .edit-modal-content {
-        max-height: 90vh;
+        max-width: 350px;
+        margin: 0 auto 15px;
     }
     
-    .invitation-list {
-        max-height: 250px;
+    .btn:hover {
+        transform: translateY(-2px);
     }
-}
-
-/* 觸控裝置優化 */
-@media (pointer: coarse) {
-    .btn,
-    .btn-small,
-    .tab-btn,
-    .checkbox-item {
-        min-height: 44px; /* 確保觸控目標足夠大 */
-    }
-    
-    .modal-close {
-        min-width: 44px;
-        min-height: 44px;
-    }
-}
-
-/* 滑鼠裝置優化 */
-@media (pointer: fine) {
-    .btn:hover,
-    .btn-small:hover,
-    .tab-btn:hover {
-        transform: translateY(-1px);
-    }
-    
-    .checkbox-item:hover {
-        transform: scale(1.02);
-    }
-}
-
-/* 焦點可見性改善 */
-.btn:focus-visible,
-.form-group input:focus-visible,
-.form-group select:focus-visible,
-.form-group textarea:focus-visible,
-.checkbox-item:focus-within {
-    outline: 2px solid #4285f4;
-    outline-offset: 2px;
-}
-
-/* 無障礙功能增強 */
-.visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-}
-
-/* 錯誤狀態樣式 */
-.form-group.error input,
-.form-group.error select,
-.form-group.error textarea {
-    border-color: #dc3545;
-    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
-}
-
-.form-group.error label {
-    color: #dc3545;
-}
-
-/* 成功狀態樣式 */
-.form-group.success input,
-.form-group.success select,
-.form-group.success textarea {
-    border-color: #28a745;
-    box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.1);
-}
-
-/* 載入狀態 */
-.container.loading {
-    opacity: 0.7;
-    pointer-events: none;
-}
-
-.container.loading::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 40px;
-    height: 40px;
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #4285f4;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    z-index: 9999;
 }
