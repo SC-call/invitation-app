@@ -518,10 +518,9 @@ body {
 
 .sync-indicator {
     position: absolute;
-    top: 8px;
     right: 8px;
     font-size: 0.7em;
-    padding: 2px 6px;
+    padding: 1px;
     border-radius: 10px;
     font-weight: bold;
 }
