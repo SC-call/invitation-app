@@ -518,9 +518,10 @@ body {
 
 .sync-indicator {
     position: absolute;
-    right: 8px;
+    top: 8px;
+    right: 80px;  /* 改這裡：從 8px 改為 80px，為按鈕留出空間 */
     font-size: 0.7em;
-    padding: 1px;
+    padding: 2px 6px;
     border-radius: 10px;
     font-weight: bold;
 }
