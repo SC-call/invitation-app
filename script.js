@@ -1425,6 +1425,162 @@ document.addEventListener('touchend', function(e) {
     }
     lastTouchEnd = now;
 }, false);
+// 在 script.js 中新增以下函數
+
+// ============ 登出功能 ============
+function showLogoutConfirm() {
+    const logoutConfirm = document.getElementById('logoutConfirm');
+    if (logoutConfirm) {
+        logoutConfirm.style.display = 'flex';
+    }
+}
+
+function hideLogoutConfirm() {
+    const logoutConfirm = document.getElementById('logoutConfirm');
+    if (logoutConfirm) {
+        logoutConfirm.style.display = 'none';
+    }
+}
+
+function confirmLogout() {
+    try {
+        // 清除所有本地儲存資料
+        localStorage.clear();
+        
+        // 重置全域變數
+        currentUser = null;
+        localInvitations = [];
+        invitationCounts = {
+            morning: 0,
+            afternoon: 0,
+            evening: 0,
+            total: 0
+        };
+        quotaLimits = {
+            morning: 0,
+            afternoon: 0,
+            evening: 0,
+            total: 0
+        };
+        editingInvitation = null;
+        sessionOptions = [];
+        
+        // 重置 UI 狀態
+        resetUIToLoginState();
+        
+        // 隱藏確認對話框
+        hideLogoutConfirm();
+        
+        // 顯示成功訊息
+        showAlert('success', '已成功登出，所有本地資料已清除');
+        
+        console.log('登出完成，本地資料已清除');
+        
+    } catch (error) {
+        console.error('登出失敗:', error);
+        showAlert('error', '登出時發生錯誤：' + error.toString());
+    }
+}
+
+function resetUIToLoginState() {
+    // 重置用戶資訊區塊
+    const userInfo = document.getElementById('userInfo');
+    const loginForm = document.getElementById('loginForm');
+    const quotaInfo = document.getElementById('quotaInfo');
+    const sessionQuotas = document.getElementById('sessionQuotas');
+    const functionTabs = document.getElementById('functionTabs');
+    const mainContent = document.getElementById('mainContent');
+    const logoutBtn = document.getElementById('logoutBtn');
+    
+    if (userInfo) {
+        userInfo.classList.remove('logged-in');
+        userInfo.innerHTML = `
+            <div>
+                <div class="user-name">請選擇邀約人員</div>
+            </div>
+            <button class="logout-btn" id="logoutBtn" style="display: none;" onclick="showLogoutConfirm()">
+                登出
+            </button>
+        `;
+    }
+    
+    if (loginForm) loginForm.style.display = 'grid';
+    if (quotaInfo) quotaInfo.style.display = 'none';
+    if (sessionQuotas) sessionQuotas.style.display = 'none';
+    if (functionTabs) functionTabs.style.display = 'none';
+    if (mainContent) mainContent.style.display = 'none';
+    
+    // 清空表單
+    const staffSelect = document.getElementById('staffSelect');
+    const staffPassword = document.getElementById('staffPassword');
+    
+    if (staffSelect) staffSelect.value = '';
+    if (staffPassword) staffPassword.value = '';
+    
+    // 重置功能選擇
+    currentFunction = 'invite';
+    
+    // 清空邀約列表顯示
+    const invitationList = document.getElementById('invitationList');
+    if (invitationList) {
+        invitationList.innerHTML = '<div class="no-data">載入中...</div>';
+    }
+    
+    // 更新本地統計
+    updateLocalStats();
+    updateCountDisplay();
+}
+
+// 修改 updateUserInterface 函數，新增登出按鈕顯示
+function updateUserInterface() {
+    const userInfo = document.getElementById('userInfo');
+    const loginForm = document.getElementById('loginForm');
+    const quotaInfo = document.getElementById('quotaInfo');
+    const sessionQuotas = document.getElementById('sessionQuotas');
+    const functionTabs = document.getElementById('functionTabs');
+    const mainContent = document.getElementById('mainContent');
+    const logoutBtn = document.getElementById('logoutBtn');
+    
+    if (userInfo) {
+        userInfo.classList.add('logged-in');
+        const loginTimeDisplay = currentUser.loginTime ? 
+            ' (登入: ' + formatTime(currentUser.loginTime) + ')' : '';
+        userInfo.innerHTML = `
+            <div>
+                <div class="user-name">${currentUser.name}${loginTimeDisplay}</div>
+            </div>
+            <button class="logout-btn" id="logoutBtn" onclick="showLogoutConfirm()">
+                登出
+            </button>
+        `;
+    }
+    
+    if (loginForm) loginForm.style.display = 'none';
+    if (quotaInfo) quotaInfo.style.display = 'grid';
+    if (sessionQuotas) sessionQuotas.style.display = 'grid';
+    if (functionTabs) functionTabs.style.display = 'flex';
+    if (mainContent) mainContent.style.display = 'block';
+}
+
+// 在 window 物件上導出新函數（供 HTML 呼叫）
+window.showLogoutConfirm = showLogoutConfirm;
+window.hideLogoutConfirm = hideLogoutConfirm;
+window.confirmLogout = confirmLogout;
+
+// 在 DOMContentLoaded 事件中新增對話框點擊背景關閉功能
+document.addEventListener('DOMContentLoaded', function() {
+    // ... 現有的初始化程式碼 ...
+    
+    // 登出確認對話框點擊背景關閉
+    const logoutConfirm = document.getElementById('logoutConfirm');
+    if (logoutConfirm) {
+        logoutConfirm.addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideLogoutConfirm();
+            }
+        });
+    }
+});
 
 // ============ 全域函數導出（供HTML呼叫） ============
 window.login = login;

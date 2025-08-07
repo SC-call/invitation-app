@@ -49,6 +49,10 @@
                 <div>
                     <div class="user-name">請選擇邀約人員</div>
                 </div>
+                <!-- 新增登出按鈕 -->
+                <button class="logout-btn" id="logoutBtn" style="display: none;" onclick="showLogoutConfirm()">
+                    登出
+                </button>
             </div>
             
             <div class="login-form" id="loginForm">
@@ -435,5 +439,15 @@
             });
         }
     </script>
+    <div class="confirm-dialog" id="logoutConfirm">
+        <div class="confirm-dialog-content">
+            <h3>確認登出</h3>
+            <p>登出後將清除所有本地資料（包括離線邀約記錄），確定要繼續嗎？</p>
+            <div class="confirm-dialog-actions">
+                <button class="btn btn-danger" onclick="confirmLogout()">確認登出</button>
+                <button class="btn btn-secondary" onclick="hideLogoutConfirm()">取消</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
