@@ -2,17 +2,17 @@
   "name": "健檢邀約系統",
   "short_name": "健檢邀約",
   "description": "健康檢查邀約管理系統",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#ffffff",
   "theme_color": "#4285f4",
   "lang": "zh-TW",
-  "scope": "/",
+  "scope": "./",
   "categories": ["health", "productivity", "business"],
   "icons": [
     {
-      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgdmlld0JveD0iMCAwIDE5MiAxOTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxOTIiIGhlaWdodD0iMTkyIiByeD0iMzIiIGZpbGw9IiM0Mjg1ZjQiLz4KPHN2ZyB4PSI0OCIgeT0iNDgiIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CjxwYXRoIGQ9Ik0xNCAySDZhMiAyIDAgMCAwLTIgMnYxNmEyIDIgMCAwIDAgMiAyaDEyYTIgMiAwIDAgMCAyLTJWOHoiLz4KPHBVMS1saW5lIHgxPSIxNiIgeTE9IjYiIHgyPSIxNiIgeTI9IjEwIi8+Cjxwb2x5bGluZSBwb2ludHM9IjgsMTIgMTIsMTYgMjAsMTAiLz4KPC9zdmc+Cjwvc3ZnPgo=",
+      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgdmlld0JveD0iMCAwIDE5MiAxOTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxOTIiIGhlaWdodD0iMTkyIiByeD0iMzIiIGZpbGw9IiM0Mjg1ZjQiLz4KPHN2ZyB4PSI0OCIgeT0iNDgiIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CjxwYXRoIGQ9Ik0xNCAySDZhMiAyIDAgMCAwLTIgMnYxNmEyIDIgMCAwIDAgMiAyaDEyYTIgMiAwIDAgMCAyLTJWOHoiLz4KPHA1MS1saW5lIHgxPSIxNiIgeTE9IjYiIHgyPSIxNiIgeTI9IjEwIi8+Cjxwb2x5bGluZSBwb2ludHM9IjgsMTIgMTIsMTYgMjAsMTAiLz4KPC9zdmc+Cjwvc3ZnPgo=",
       "sizes": "192x192",
       "type": "image/svg+xml",
       "purpose": "any maskable"
@@ -29,13 +29,13 @@
       "name": "新增邀約",
       "short_name": "新增",
       "description": "快速新增邀約記錄",
-      "url": "/?tab=invite"
+      "url": "./?tab=invite"
     },
     {
       "name": "今日名單",
       "short_name": "名單", 
       "description": "查看今日邀約名單",
-      "url": "/?tab=list"
+      "url": "./?tab=list"
     }
   ],
   "prefer_related_applications": false,

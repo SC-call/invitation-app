@@ -1,4 +1,4 @@
-const CACHE_NAME = '健檢邀約系統-v1.0.0';
+const CACHE_NAME = '健檢邀約系統-v1.0.1';
 const CACHE_URLS = [
   './',
   './index.html',
@@ -50,7 +50,7 @@ self.addEventListener('activate', event => {
   );
 });
 
-// 攔截網路請求
+// 攔截網路請求 - 優化 iOS 相容性
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
@@ -65,13 +65,29 @@ self.addEventListener('fetch', event => {
     return;
   }
   
+  // 特別處理根路徑請求（重要：解決 iOS PWA 問題）
+  if (url.pathname === '/' || url.pathname === './') {
+    event.respondWith(
+      caches.match('./index.html')
+        .then(response => {
+          if (response) {
+            return response;
+          }
+          return fetch('./index.html');
+        })
+        .catch(() => {
+          return caches.match('./index.html');
+        })
+    );
+    return;
+  }
+  
   // 對於 Google Apps Script API 請求，優先使用網路
   if (url.hostname.includes('script.google.com')) {
     event.respondWith(
       fetch(request)
         .catch(error => {
           console.log('API 請求失敗，系統將在離線模式下運行:', error);
-          // 返回一個表示離線的響應
           return new Response(
             JSON.stringify({ 
               error: 'offline', 
@@ -93,26 +109,34 @@ self.addEventListener('fetch', event => {
     caches.match(request)
       .then(cachedResponse => {
         if (cachedResponse) {
+          // 背景更新快取
+          fetch(request)
+            .then(response => {
+              if (response && response.status === 200 && response.type === 'basic') {
+                const responseToCache = response.clone();
+                caches.open(CACHE_NAME)
+                  .then(cache => {
+                    cache.put(request, responseToCache);
+                  });
+              }
+            })
+            .catch(() => {
+              // 背景更新失敗，但不影響使用者體驗
+            });
+          
           return cachedResponse;
         }
         
         return fetch(request)
           .then(response => {
-            // 確保是有效的響應
             if (!response || response.status !== 200 || response.type !== 'basic') {
               return response;
             }
             
-            // 複製響應，因為響應是流，只能消費一次
             const responseToCache = response.clone();
-            
-            // 將新資源加入快取
             caches.open(CACHE_NAME)
               .then(cache => {
                 cache.put(request, responseToCache);
-              })
-              .catch(error => {
-                console.log('快取更新失敗:', error);
               });
             
             return response;
@@ -120,7 +144,7 @@ self.addEventListener('fetch', event => {
           .catch(error => {
             console.log('網路請求失敗:', error);
             
-            // 如果是 HTML 請求且網路失敗，返回離線頁面
+            // 如果是 HTML 請求且網路失敗，返回主頁面
             if (request.headers.get('accept') && request.headers.get('accept').includes('text/html')) {
               return caches.match('./index.html');
             }
@@ -136,7 +160,6 @@ self.addEventListener('sync', event => {
   if (event.tag === 'health-check-sync') {
     console.log('背景同步觸發');
     event.waitUntil(
-      // 通知主線程進行同步
       self.clients.matchAll()
         .then(clients => {
           clients.forEach(client => {
@@ -198,16 +221,6 @@ self.addEventListener('message', event => {
   if (event.data && event.data.type === 'GET_VERSION') {
     event.ports[0].postMessage({ version: CACHE_NAME });
   }
-});
-
-// 錯誤處理
-self.addEventListener('error', event => {
-  console.error('Service Worker 錯誤:', event.error);
-});
-
-self.addEventListener('unhandledrejection', event => {
-  console.error('Service Worker 未處理的 Promise 拒絕:', event.reason);
-  event.preventDefault();
 });
 
 console.log('Service Worker 載入完成:', CACHE_NAME);

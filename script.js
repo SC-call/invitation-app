@@ -1821,14 +1821,36 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============ PWA功能 ============
 // 註冊Service Worker
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/invitation-app/sw.js')
+    window.addEventListener('load', () => {
+        // 修正路徑問題，使用相對路徑
+        navigator.serviceWorker.register('./sw.js')
             .then(registration => {
                 console.log('Service Worker 註冊成功:', registration);
+                
+                // 檢查是否有更新
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            // 有新版本可用
+                            showUpdateNotification();
+                        }
+                    });
+                });
             })
             .catch(error => {
                 console.log('Service Worker 註冊失敗:', error);
             });
+        
+        // 監聽來自 Service Worker 的訊息
+        navigator.serviceWorker.addEventListener('message', event => {
+            if (event.data.type === 'BACKGROUND_SYNC') {
+                // 處理背景同步請求
+                if (typeof autoSync === 'function') {
+                    autoSync();
+                }
+            }
+        });
     });
 }
 
