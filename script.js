@@ -1,4 +1,4 @@
-// 健檢邀約系統前端 JavaScript - 優化版本
+// 健檢邀約系統前端 JavaScript - 雙向同步版本
 // 更新您的 Google Apps Script 部署 URL
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxhkCskd6Emdr6Nu77sKGCjdsRdgoOX5YPnpgtrK_RXRLBhLGv5HgQ4r-PP-a4_CTB/exec';
 
@@ -82,7 +82,8 @@ var quotaLimits = {
 const STORAGE_KEYS = {
     INVITATIONS: 'health_check_invitations',
     USER: 'health_check_current_user',
-    LAST_SYNC: 'health_check_last_sync'
+    LAST_SYNC: 'health_check_last_sync',
+    SYNC_HASH: 'health_check_sync_hash'
 };
 
 // 邀約狀態枚舉
@@ -113,6 +114,8 @@ function initializeApp() {
         updateUserInterface();
         loadTodayData();
         loadSessionOptions(currentUser.name);
+        // 登入時進行完整同步
+        setTimeout(performFullSync, 1000);
     }
     
     // 定期自動同步 (每5分鐘)
@@ -132,7 +135,7 @@ function handleOnline() {
     isOnline = true;
     updateNetworkStatus();
     showSyncStatus('網路已連接，將自動同步資料', 'success');
-    setTimeout(autoSync, 2000); // 2秒後開始同步
+    setTimeout(performFullSync, 2000); // 2秒後開始完整同步
 }
 
 function handleOffline() {
@@ -239,6 +242,97 @@ function addInvitationToLocal(invitationData) {
     return invitation;
 }
 
+// 新增：將雲端邀約加入本地
+function addCloudInvitationToLocal(cloudInvitation) {
+    // 檢查是否已存在（根據 serverId 或 localId）
+    const existingIndex = localInvitations.findIndex(inv => 
+        (inv.serverId && inv.serverId === cloudInvitation.id) ||
+        (inv.localId && inv.localId === cloudInvitation.localId)
+    );
+    
+    if (existingIndex !== -1) {
+        // 如果已存在，更新資料
+        const existing = localInvitations[existingIndex];
+        localInvitations[existingIndex] = {
+            ...existing,
+            serverId: cloudInvitation.id,
+            name: cloudInvitation.name,
+            phone1: cloudInvitation.phone1,
+            phone2: cloudInvitation.phone2 || '',
+            mammography: cloudInvitation.mammography || 0,
+            firstScreen: cloudInvitation.firstScreen || 0,
+            cervicalSmear: cloudInvitation.cervicalSmear || 0,
+            adultHealth: cloudInvitation.adultHealth || 0,
+            hepatitis: cloudInvitation.hepatitis || 0,
+            colorectal: cloudInvitation.colorectal || 0,
+            notes: cloudInvitation.notes || '',
+            sessionInfo: reconstructSessionInfo(cloudInvitation),
+            session: cloudInvitation.session,
+            inviter: cloudInvitation.inviter,
+            date: cloudInvitation.date,
+            region: cloudInvitation.region,
+            location: cloudInvitation.location,
+            appointmentType: cloudInvitation.appointmentType,
+            year: cloudInvitation.year,
+            inviteDate: cloudInvitation.inviteDate,
+            createTime: cloudInvitation.createTime,
+            lastModified: cloudInvitation.lastModified,
+            syncStatus: SYNC_STATUS.SYNCED
+        };
+    } else {
+        // 如果不存在，新增
+        const newInvitation = {
+            id: cloudInvitation.id,
+            localId: cloudInvitation.localId || ('CLOUD_' + cloudInvitation.id),
+            serverId: cloudInvitation.id,
+            syncStatus: SYNC_STATUS.SYNCED,
+            syncError: null,
+            createTime: cloudInvitation.createTime,
+            lastModified: cloudInvitation.lastModified,
+            
+            // 邀約資料
+            name: cloudInvitation.name,
+            phone1: cloudInvitation.phone1,
+            phone2: cloudInvitation.phone2 || '',
+            mammography: cloudInvitation.mammography || 0,
+            firstScreen: cloudInvitation.firstScreen || 0,
+            cervicalSmear: cloudInvitation.cervicalSmear || 0,
+            adultHealth: cloudInvitation.adultHealth || 0,
+            hepatitis: cloudInvitation.hepatitis || 0,
+            colorectal: cloudInvitation.colorectal || 0,
+            notes: cloudInvitation.notes || '',
+            sessionInfo: reconstructSessionInfo(cloudInvitation),
+            session: cloudInvitation.session,
+            inviter: cloudInvitation.inviter,
+            
+            // 場次資訊
+            date: cloudInvitation.date,
+            region: cloudInvitation.region,
+            location: cloudInvitation.location,
+            appointmentType: cloudInvitation.appointmentType,
+            year: cloudInvitation.year,
+            
+            // 邀約日期
+            inviteDate: cloudInvitation.inviteDate
+        };
+        
+        localInvitations.push(newInvitation);
+    }
+    
+    return true;
+}
+
+// 重建 sessionInfo 字串
+function reconstructSessionInfo(cloudInvitation) {
+    if (!cloudInvitation.year || !cloudInvitation.date || !cloudInvitation.region || 
+        !cloudInvitation.location || !cloudInvitation.appointmentType) {
+        return '';
+    }
+    
+    const fullDate = cloudInvitation.year + cloudInvitation.date.padStart(4, '0');
+    return `${fullDate}-${cloudInvitation.region}-${cloudInvitation.location}-${cloudInvitation.appointmentType}`;
+}
+
 function updateInvitationInLocal(localId, updateData) {
     const index = localInvitations.findIndex(inv => inv.localId === localId);
     if (index === -1) return false;
@@ -297,194 +391,123 @@ function parseSessionInfo(sessionInfo) {
     };
 }
 
-// ============ 計數管理 ============
-function updateLocalCounts() {
-    const todayStr = getTodayString('MMDD');
-    const counts = {
-        morning: 0,
-        afternoon: 0,
-        evening: 0,
-        total: 0
-    };
+// ============ 雲端同步功能 - 新增雙向同步 ============
+
+// 新增：完整同步功能（上傳本地 + 下載雲端）
+function performFullSync() {
+    if (!isOnline || syncInProgress || !currentUser) return;
     
-    localInvitations.forEach(function(inv) {
-        // 只計算今日的主約邀約
-        if (inv.inviteDate === todayStr && 
-            inv.appointmentType === '主約' && 
-            (!currentUser || inv.inviter === currentUser.name || currentUser.name === '系統管理員')) {
+    console.log('開始執行完整同步...');
+    syncInProgress = true;
+    updateNetworkStatus();
+    showSyncStatus('正在執行完整同步...', 'info');
+    
+    // 先下載雲端資料，再上傳本地資料
+    downloadCloudInvitations()
+        .then(() => {
+            console.log('雲端資料下載完成，開始上傳本地資料...');
+            const pendingInvitations = localInvitations.filter(inv => 
+                inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR
+            );
             
-            if (inv.session === '早上場') counts.morning++;
-            else if (inv.session === '下午場') counts.afternoon++;
-            else if (inv.session === '晚上場') counts.evening++;
-            
-            counts.total++;
-        }
-    });
-    
-    invitationCounts = counts;
-    updateCountDisplay();
-}
-
-function updateCountDisplay() {
-    const elements = {
-        morningCount: document.getElementById('morningCount'),
-        afternoonCount: document.getElementById('afternoonCount'),
-        eveningCount: document.getElementById('eveningCount'),
-        todayCount: document.getElementById('todayCount'),
-        remainingCount: document.getElementById('remainingCount')
-    };
-    
-    if (elements.morningCount) elements.morningCount.textContent = invitationCounts.morning;
-    if (elements.afternoonCount) elements.afternoonCount.textContent = invitationCounts.afternoon;
-    if (elements.eveningCount) elements.eveningCount.textContent = invitationCounts.evening;
-    if (elements.todayCount) elements.todayCount.textContent = invitationCounts.total;
-    
-    const remaining = Math.max(0, quotaLimits.total - invitationCounts.total);
-    if (elements.remainingCount) elements.remainingCount.textContent = remaining;
-    
-    updateSessionQuotaDisplay();
-}
-
-function updateSessionQuotaDisplay() {
-    const morningQuota = document.getElementById('morningQuota');
-    const afternoonQuota = document.getElementById('afternoonQuota');
-    const eveningQuota = document.getElementById('eveningQuota');
-    
-    if (morningQuota) {
-        if (invitationCounts.morning >= quotaLimits.morning && quotaLimits.morning > 0) {
-            morningQuota.classList.add('full');
-        } else {
-            morningQuota.classList.remove('full');
-        }
-    }
-    
-    if (afternoonQuota) {
-        if (invitationCounts.afternoon >= quotaLimits.afternoon && quotaLimits.afternoon > 0) {
-            afternoonQuota.classList.add('full');
-        } else {
-            afternoonQuota.classList.remove('full');
-        }
-    }
-    
-    if (eveningQuota) {
-        if (invitationCounts.evening >= quotaLimits.evening && quotaLimits.evening > 0) {
-            eveningQuota.classList.add('full');
-        } else {
-            eveningQuota.classList.remove('full');
-        }
-    }
-}
-
-function updateLocalStats() {
-    const todayStr = getTodayString('MMDD');
-    let localCount = 0;
-    let pendingCount = 0;
-    let syncedCount = 0;
-    
-    localInvitations.forEach(function(inv) {
-        if (inv.inviteDate === todayStr && 
-            (!currentUser || inv.inviter === currentUser.name || currentUser.name === '系統管理員')) {
-            localCount++;
-            if (inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR) {
-                pendingCount++;
-            } else if (inv.syncStatus === SYNC_STATUS.SYNCED) {
-                syncedCount++;
-            }
-        }
-    });
-    
-    const elements = {
-        localCount: document.getElementById('localCount'),
-        pendingCount: document.getElementById('pendingCount'),
-        syncedCount: document.getElementById('syncedCount')
-    };
-    
-    if (elements.localCount) elements.localCount.textContent = localCount;
-    if (elements.pendingCount) elements.pendingCount.textContent = pendingCount;
-    if (elements.syncedCount) elements.syncedCount.textContent = syncedCount;
-}
-
-// ============ Google Apps Script API 呼叫 ============
-function callGoogleScript(functionName, data = {}) {
-    return new Promise((resolve, reject) => {
-        const payload = {
-            function: functionName,
-            parameters: data,
-            timestamp: getCurrentTimestamp()
-        };
-        
-        // 使用 FormData 避免 CORS 預檢請求
-        const formData = new FormData();
-        formData.append('data', JSON.stringify(payload));
-        
-        const requestOptions = {
-            method: 'POST',
-            body: formData,
-        };
-        
-        fetch(GOOGLE_SCRIPT_URL, requestOptions)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            return response.text();
-        })
-        .then(text => {
-            try {
-                const result = JSON.parse(text);
-                if (result.success === false && result.error) {
-                    reject(new Error(result.error));
-                } else {
-                    resolve(result);
-                }
-            } catch (parseError) {
-                console.error('JSON 解析錯誤:', parseError);
-                
-                if (text.includes('<html>') || text.includes('<!DOCTYPE')) {
-                    reject(new Error('收到 HTML 回應，可能是權限或部署問題'));
-                } else {
-                    reject(new Error('API 回應格式錯誤: ' + text.substring(0, 100)));
-                }
-            }
-        })
-        .catch(error => {
-            console.error('API 請求失敗:', error);
-            
-            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-                reject(new Error('網路錯誤或 CORS 問題，請檢查 Google Apps Script 部署設定'));
+            if (pendingInvitations.length > 0) {
+                return syncToCloud(pendingInvitations, false); // 不重複設定 syncInProgress
             } else {
-                reject(error);
+                console.log('沒有待上傳的本地資料');
+                return Promise.resolve();
             }
+        })
+        .then(() => {
+            console.log('完整同步完成');
+            finishFullSync();
+        })
+        .catch(error => {
+            console.error('完整同步失敗:', error);
+            showSyncStatus('同步失敗：' + error.message, 'error');
+            finishFullSync();
+        });
+}
+
+// 新增：下載雲端邀約資料
+function downloadCloudInvitations() {
+    return new Promise((resolve, reject) => {
+        const todayStr = getTodayString();
+        
+        callGoogleScript('getTodayInvitationList', {
+            inviter: currentUser.name === '系統管理員' ? '' : currentUser.name,
+            date: todayStr
+        })
+        .then(cloudInvitations => {
+            console.log('收到雲端邀約資料:', cloudInvitations.length, '筆');
+            
+            // 將雲端資料同步到本地
+            cloudInvitations.forEach(cloudInvitation => {
+                addCloudInvitationToLocal(cloudInvitation);
+            });
+            
+            // 按時間排序
+            localInvitations.sort((a, b) => {
+                const timeA = new Date(a.createTime || 0);
+                const timeB = new Date(b.createTime || 0);
+                return timeB - timeA; // 新的在前
+            });
+            
+            saveLocalData();
+            updateLocalCounts();
+            updateLocalStats();
+            updateInvitationListDisplay();
+            
+            console.log('雲端資料同步完成');
+            resolve();
+        })
+        .catch(error => {
+            console.error('下載雲端資料失敗:', error);
+            reject(error);
         });
     });
 }
 
-function safeGoogleScriptCall(functionName, successCallback, errorCallback, data = {}) {
-    callGoogleScript(functionName, data)
-        .then(result => {
-            if (successCallback) successCallback(result);
-        })
-        .catch(error => {
-            console.error('API 呼叫失敗:', functionName, error);
-            if (errorCallback) {
-                errorCallback(error.message || error.toString());
-            }
-        });
+function finishFullSync() {
+    syncInProgress = false;
+    updateNetworkStatus();
+    
+    const syncedCount = localInvitations.filter(inv => inv.syncStatus === SYNC_STATUS.SYNCED).length;
+    const errorCount = localInvitations.filter(inv => inv.syncStatus === SYNC_STATUS.ERROR).length;
+    const totalCount = localInvitations.length;
+    
+    if (errorCount === 0) {
+        showSyncStatus(`完整同步完成！本地共有 ${totalCount} 筆資料`, 'success');
+    } else {
+        showSyncStatus(`同步完成，${syncedCount} 筆成功，${errorCount} 筆失敗`, 'warning');
+    }
+    
+    // 更新同步按鈕狀態
+    const syncBtn = document.getElementById('syncBtn');
+    const syncBtnText = document.getElementById('syncBtnText');
+    if (syncBtn && syncBtnText) {
+        syncBtn.disabled = false;
+        syncBtnText.textContent = '同步至雲端';
+    }
+    
+    updateSyncButtonText();
 }
 
-// ============ 雲端同步功能 ============
+// 修改原有的自動同步功能
 function autoSync() {
     if (!isOnline || syncInProgress || !currentUser) return;
     
+    // 定期同步改為輕量級同步（只上傳待同步的資料）
     const pendingInvitations = localInvitations.filter(inv => 
         inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR
     );
     
     if (pendingInvitations.length > 0) {
+        console.log('執行自動同步，上傳', pendingInvitations.length, '筆待同步資料');
         syncToCloud(pendingInvitations);
     }
 }
 
+// 修改手動同步功能
 function manualSync() {
     if (!isOnline) {
         showAlert('warning', '請檢查網路連接');
@@ -496,83 +519,96 @@ function manualSync() {
         return;
     }
     
-    const pendingInvitations = localInvitations.filter(inv => 
-        inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR
-    );
-    
-    if (pendingInvitations.length === 0) {
-        showAlert('success', '所有資料已同步');
-        return;
-    }
-    
-    syncToCloud(pendingInvitations);
+    // 手動同步執行完整同步
+    performFullSync();
 }
 
-function syncToCloud(invitations) {
-    if (!invitations || invitations.length === 0) return;
+function syncToCloud(invitations, setSyncProgress = true) {
+    if (!invitations || invitations.length === 0) return Promise.resolve();
     
-    syncInProgress = true;
-    updateNetworkStatus();
-    showSyncStatus('正在同步 ' + invitations.length + ' 筆資料...', 'info');
-    
-    const syncBtn = document.getElementById('syncBtn');
-    const syncBtnText = document.getElementById('syncBtnText');
-    if (syncBtn && syncBtnText) {
-        syncBtn.disabled = true;
-        syncBtnText.innerHTML = '<div class="loading-spinner"></div>同步中...';
-    }
-    
-    // 標記為同步中
-    invitations.forEach(function(inv) {
-        inv.syncStatus = SYNC_STATUS.SYNCING;
-        inv.lastModified = getCurrentTimestamp();
+    return new Promise((resolve, reject) => {
+        if (setSyncProgress) {
+            syncInProgress = true;
+            updateNetworkStatus();
+            showSyncStatus('正在同步 ' + invitations.length + ' 筆資料...', 'info');
+            
+            const syncBtn = document.getElementById('syncBtn');
+            const syncBtnText = document.getElementById('syncBtnText');
+            if (syncBtn && syncBtnText) {
+                syncBtn.disabled = true;
+                syncBtnText.innerHTML = '<div class="loading-spinner"></div>同步中...';
+            }
+        }
+        
+        // 標記為同步中
+        invitations.forEach(function(inv) {
+            inv.syncStatus = SYNC_STATUS.SYNCING;
+            inv.lastModified = getCurrentTimestamp();
+        });
+        
+        updateInvitationListDisplay();
+        updateLocalStats();
+        
+        // 批次同步
+        batchSyncInvitations(invitations, 0)
+            .then(() => {
+                if (setSyncProgress) {
+                    finishSync();
+                }
+                resolve();
+            })
+            .catch(error => {
+                if (setSyncProgress) {
+                    finishSync();
+                }
+                reject(error);
+            });
     });
-    
-    updateInvitationListDisplay();
-    updateLocalStats();
-    
-    // 批次同步
-    batchSyncInvitations(invitations, 0);
 }
 
 function batchSyncInvitations(invitations, index) {
-    if (index >= invitations.length) {
-        // 同步完成
-        finishSync();
-        return;
-    }
-    
-    const invitation = invitations[index];
-    const formData = convertToServerFormat(invitation);
-    
-    callGoogleScript('submitInvitation', formData)
-        .then(result => {
-            if (result.success) {
-                invitation.syncStatus = SYNC_STATUS.SYNCED;
-                invitation.serverId = result.invitationId || invitation.localId;
-                invitation.syncError = null;
-                invitation.lastModified = getCurrentTimestamp();
-            } else {
+    return new Promise((resolve, reject) => {
+        if (index >= invitations.length) {
+            resolve();
+            return;
+        }
+        
+        const invitation = invitations[index];
+        const formData = convertToServerFormat(invitation);
+        
+        callGoogleScript('submitInvitation', formData)
+            .then(result => {
+                if (result.success) {
+                    invitation.syncStatus = SYNC_STATUS.SYNCED;
+                    invitation.serverId = result.invitationId || invitation.localId;
+                    invitation.syncError = null;
+                    invitation.lastModified = getCurrentTimestamp();
+                } else {
+                    invitation.syncStatus = SYNC_STATUS.ERROR;
+                    invitation.syncError = result.message || '同步失敗';
+                    invitation.lastModified = getCurrentTimestamp();
+                }
+                
+                // 繼續下一個
+                setTimeout(() => {
+                    batchSyncInvitations(invitations, index + 1)
+                        .then(resolve)
+                        .catch(reject);
+                }, 500);
+            })
+            .catch(error => {
                 invitation.syncStatus = SYNC_STATUS.ERROR;
-                invitation.syncError = result.message || '同步失敗';
+                invitation.syncError = error.toString();
                 invitation.lastModified = getCurrentTimestamp();
-            }
-            
-            // 繼續下一個
-            setTimeout(function() {
-                batchSyncInvitations(invitations, index + 1);
-            }, 500); // 避免過於頻繁的請求
-        })
-        .catch(error => {
-            invitation.syncStatus = SYNC_STATUS.ERROR;
-            invitation.syncError = error.toString();
-            invitation.lastModified = getCurrentTimestamp();
-            
-            // 繼續下一個
-            setTimeout(function() {
-                batchSyncInvitations(invitations, index + 1);
-            }, 500);
-        });
+                
+                // 繼續下一個
+                setTimeout(() => {
+                    batchSyncInvitations(invitations, index + 1)
+                        .then(resolve)
+                        .catch(reject);
+                }, 500);
+            });
+    });
 }
 
 function finishSync() {
@@ -597,6 +633,8 @@ function finishSync() {
     } else {
         showSyncStatus('同步完成，' + syncedCount + ' 筆成功，' + errorCount + ' 筆失敗', 'warning');
     }
+    
+    updateSyncButtonText();
 }
 
 function convertToServerFormat(invitation) {
@@ -706,6 +744,7 @@ function getAppointmentTypeFromSession(sessionValue) {
     return '副約';
 }
 
+// 修改登入函數，登入成功後進行完整同步
 function login() {
     const staffName = document.getElementById('staffSelect').value;
     const password = document.getElementById('staffPassword').value;
@@ -739,7 +778,10 @@ function login() {
                 updateUserInterface();
                 loadTodayData();
                 loadSessionOptions(currentUser.name);
-                showAlert('success', '歡迎 ' + staffName + '，登入成功！');
+                showAlert('success', '歡迎 ' + staffName + '，登入成功！正在同步資料...');
+                
+                // 登入成功後進行完整同步
+                setTimeout(performFullSync, 1000);
             } else {
                 showAlert('error', result.message);
             }
@@ -803,6 +845,183 @@ function loadTodayData() {
             date: todayStr
         }
     );
+}
+
+// ============ 計數管理 ============
+function updateLocalCounts() {
+    const todayStr = getTodayString('MMDD');
+    const counts = {
+        morning: 0,
+        afternoon: 0,
+        evening: 0,
+        total: 0
+    };
+    
+    localInvitations.forEach(function(inv) {
+        // 只計算今日的主約邀約
+        if (inv.inviteDate === todayStr && 
+            inv.appointmentType === '主約' && 
+            (!currentUser || inv.inviter === currentUser.name || currentUser.name === '系統管理員')) {
+            
+            if (inv.session === '早上場') counts.morning++;
+            else if (inv.session === '下午場') counts.afternoon++;
+            else if (inv.session === '晚上場') counts.evening++;
+            
+            counts.total++;
+        }
+    });
+    
+    invitationCounts = counts;
+    updateCountDisplay();
+}
+
+function updateCountDisplay() {
+    const elements = {
+        morningCount: document.getElementById('morningCount'),
+        afternoonCount: document.getElementById('afternoonCount'),
+        eveningCount: document.getElementById('eveningCount'),
+        todayCount: document.getElementById('todayCount'),
+        remainingCount: document.getElementById('remainingCount')
+    };
+    
+    if (elements.morningCount) elements.morningCount.textContent = invitationCounts.morning;
+    if (elements.afternoonCount) elements.afternoonCount.textContent = invitationCounts.afternoon;
+    if (elements.eveningCount) elements.eveningCount.textContent = invitationCounts.evening;
+    if (elements.todayCount) elements.todayCount.textContent = invitationCounts.total;
+    
+    const remaining = Math.max(0, quotaLimits.total - invitationCounts.total);
+    if (elements.remainingCount) elements.remainingCount.textContent = remaining;
+    
+    updateSessionQuotaDisplay();
+}
+
+function updateSessionQuotaDisplay() {
+    const morningQuota = document.getElementById('morningQuota');
+    const afternoonQuota = document.getElementById('afternoonQuota');
+    const eveningQuota = document.getElementById('eveningQuota');
+    
+    if (morningQuota) {
+        if (invitationCounts.morning >= quotaLimits.morning && quotaLimits.morning > 0) {
+            morningQuota.classList.add('full');
+        } else {
+            morningQuota.classList.remove('full');
+        }
+    }
+    
+    if (afternoonQuota) {
+        if (invitationCounts.afternoon >= quotaLimits.afternoon && quotaLimits.afternoon > 0) {
+            afternoonQuota.classList.add('full');
+        } else {
+            afternoonQuota.classList.remove('full');
+        }
+    }
+    
+    if (eveningQuota) {
+        if (invitationCounts.evening >= quotaLimits.evening && quotaLimits.evening > 0) {
+            eveningQuota.classList.add('full');
+        } else {
+            eveningQuota.classList.remove('full');
+        }
+    }
+}
+
+function updateLocalStats() {
+    const todayStr = getTodayString('MMDD');
+    let localCount = 0;
+    let pendingCount = 0;
+    let syncedCount = 0;
+    
+    localInvitations.forEach(function(inv) {
+        if (inv.inviteDate === todayStr && 
+            (!currentUser || inv.inviter === currentUser.name || currentUser.name === '系統管理員')) {
+            localCount++;
+            if (inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR) {
+                pendingCount++;
+            } else if (inv.syncStatus === SYNC_STATUS.SYNCED) {
+                syncedCount++;
+            }
+        }
+    });
+    
+    const elements = {
+        localCount: document.getElementById('localCount'),
+        pendingCount: document.getElementById('pendingCount'),
+        syncedCount: document.getElementById('syncedCount')
+    };
+    
+    if (elements.localCount) elements.localCount.textContent = localCount;
+    if (elements.pendingCount) elements.pendingCount.textContent = pendingCount;
+    if (elements.syncedCount) elements.syncedCount.textContent = syncedCount;
+    
+    updateSyncButtonText();
+}
+
+// ============ Google Apps Script API 呼叫 ============
+function callGoogleScript(functionName, data = {}) {
+    return new Promise((resolve, reject) => {
+        const payload = {
+            function: functionName,
+            parameters: data,
+            timestamp: getCurrentTimestamp()
+        };
+        
+        // 使用 FormData 避免 CORS 預檢請求
+        const formData = new FormData();
+        formData.append('data', JSON.stringify(payload));
+        
+        const requestOptions = {
+            method: 'POST',
+            body: formData,
+        };
+        
+        fetch(GOOGLE_SCRIPT_URL, requestOptions)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.text();
+        })
+        .then(text => {
+            try {
+                const result = JSON.parse(text);
+                if (result.success === false && result.error) {
+                    reject(new Error(result.error));
+                } else {
+                    resolve(result);
+                }
+            } catch (parseError) {
+                console.error('JSON 解析錯誤:', parseError);
+                
+                if (text.includes('<html>') || text.includes('<!DOCTYPE')) {
+                    reject(new Error('收到 HTML 回應，可能是權限或部署問題'));
+                } else {
+                    reject(new Error('API 回應格式錯誤: ' + text.substring(0, 100)));
+                }
+            }
+        })
+        .catch(error => {
+            console.error('API 請求失敗:', error);
+            
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                reject(new Error('網路錯誤或 CORS 問題，請檢查 Google Apps Script 部署設定'));
+            } else {
+                reject(error);
+            }
+        });
+    });
+}
+
+function safeGoogleScriptCall(functionName, successCallback, errorCallback, data = {}) {
+    callGoogleScript(functionName, data)
+        .then(result => {
+            if (successCallback) successCallback(result);
+        })
+        .catch(error => {
+            console.error('API 呼叫失敗:', functionName, error);
+            if (errorCallback) {
+                errorCallback(error.message || error.toString());
+            }
+        });
 }
 
 function checkQuotaBeforeSubmit(session, appointmentType) {
@@ -1340,6 +1559,84 @@ function updateInvitationListDisplay() {
     }
 }
 
+// ============ 新增同步按鈕文字更新功能 ============
+function updateSyncButtonText() {
+    const syncBtn = document.getElementById('syncBtn');
+    const syncBtnText = document.getElementById('syncBtnText');
+    if (!syncBtn || !syncBtnText) return;
+    
+    const pendingCount = localInvitations.filter(inv => 
+        inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR
+    ).length;
+    
+    if (pendingCount > 0) {
+        syncBtnText.textContent = `同步 (${pendingCount})`;
+        syncBtn.style.background = 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
+    } else {
+        syncBtnText.textContent = '完整同步';
+        syncBtn.style.background = 'linear-gradient(135deg, #17a2b8 0%, #138496 100%)';
+    }
+}
+
+// ============ 登出功能 ============
+function logout() {
+    if (confirm('確定要登出嗎？')) {
+        currentUser = null;
+        localStorage.removeItem(STORAGE_KEYS.USER);
+        
+        // 重置UI
+        const userInfo = document.getElementById('userInfo');
+        const loginForm = document.getElementById('loginForm');
+        const quotaInfo = document.getElementById('quotaInfo');
+        const sessionQuotas = document.getElementById('sessionQuotas');
+        const functionTabs = document.getElementById('functionTabs');
+        const mainContent = document.getElementById('mainContent');
+        
+        if (userInfo) {
+            userInfo.classList.remove('logged-in');
+            userInfo.innerHTML = '<div><div class="user-name">請選擇邀約人員</div></div>';
+        }
+        
+        if (loginForm) loginForm.style.display = 'grid';
+        if (quotaInfo) quotaInfo.style.display = 'none';
+        if (sessionQuotas) sessionQuotas.style.display = 'none';
+        if (functionTabs) functionTabs.style.display = 'none';
+        if (mainContent) mainContent.style.display = 'none';
+        
+        // 清空表單
+        const staffSelect = document.getElementById('staffSelect');
+        const staffPassword = document.getElementById('staffPassword');
+        if (staffSelect) staffSelect.value = '';
+        if (staffPassword) staffPassword.value = '';
+        
+        showAlert('success', '已成功登出');
+    }
+}
+
+// ============ 資料清理功能 ============
+function clearOldLocalData() {
+    const todayStr = getTodayString('MMDD');
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = String(yesterday.getMonth() + 1).padStart(2, '0') + 
+                        String(yesterday.getDate()).padStart(2, '0');
+    
+    const beforeCount = localInvitations.length;
+    
+    // 保留今日和昨日的資料，刪除更早的資料
+    localInvitations = localInvitations.filter(inv => 
+        inv.inviteDate === todayStr || inv.inviteDate === yesterdayStr
+    );
+    
+    const afterCount = localInvitations.length;
+    const deletedCount = beforeCount - afterCount;
+    
+    if (deletedCount > 0) {
+        saveLocalData();
+        console.log(`清理了 ${deletedCount} 筆舊資料`);
+    }
+}
+
 // ============ API 連接測試 ============
 function testAPIConnection() {
     // 先測試 GET 請求
@@ -1392,8 +1689,133 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // 綁定登出按鈕事件（如果有的話）
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', logout);
+    }
+    
+    // 監聽用戶選擇變化，動態顯示/隱藏密碼欄位
+    const staffSelect = document.getElementById('staffSelect');
+    const staffPassword = document.getElementById('staffPassword');
+    if (staffSelect && staffPassword) {
+        staffSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const hasPassword = selectedOption && selectedOption.dataset.hasPassword === 'true';
+            
+            if (hasPassword) {
+                staffPassword.style.display = 'block';
+                staffPassword.placeholder = '請輸入密碼';
+                staffPassword.required = true;
+            } else {
+                staffPassword.style.display = 'none';
+                staffPassword.value = '';
+                staffPassword.required = false;
+            }
+        });
+    }
+    
+    // 監聽 Enter 鍵登入
+    if (staffPassword) {
+        staffPassword.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                login();
+            }
+        });
+    }
+    
+    // 監聽表單輸入變化，即時檢查配額警告
+    const sessionSelect = document.getElementById('session');
+    const sessionInfoSelect = document.getElementById('sessionInfo');
+    if (sessionSelect) {
+        sessionSelect.addEventListener('change', checkQuotaWarning);
+    }
+    if (sessionInfoSelect) {
+        sessionInfoSelect.addEventListener('change', checkQuotaWarning);
+    }
+    
+    // 監聽視窗焦點變化，重新獲得焦點時檢查同步
+    window.addEventListener('focus', function() {
+        if (currentUser && isOnline && !syncInProgress) {
+            console.log('視窗重新獲得焦點，檢查是否需要同步...');
+            // 延遲一點執行，避免頻繁切換
+            setTimeout(function() {
+                const pendingCount = localInvitations.filter(inv => 
+                    inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR
+                ).length;
+                
+                if (pendingCount > 0) {
+                    console.log('發現待同步資料，執行自動同步');
+                    autoSync();
+                }
+            }, 2000);
+        }
+    });
+    
+    // 監聽頁面即將關閉，嘗試快速同步
+    window.addEventListener('beforeunload', function(e) {
+        if (currentUser && isOnline) {
+            const pendingCount = localInvitations.filter(inv => 
+                inv.syncStatus === SYNC_STATUS.PENDING || inv.syncStatus === SYNC_STATUS.ERROR
+            ).length;
+            
+            if (pendingCount > 0) {
+                // 嘗試背景同步（如果支援的話）
+                if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SYNC_ON_CLOSE',
+                        data: pendingCount
+                    });
+                }
+                
+                // 提示用戶有未同步資料
+                e.preventDefault();
+                e.returnValue = `您有 ${pendingCount} 筆資料尚未同步，確定要離開嗎？`;
+                return e.returnValue;
+            }
+        }
+    });
+    
     // 延遲測試 API 連接
     setTimeout(testAPIConnection, 3000);
+    
+    // 每30分鐘檢查一次用戶列表更新（避免新增用戶後看不到）
+    setInterval(function() {
+        if (isOnline && !currentUser) {
+            console.log('定期更新用戶列表...');
+            loadUserList();
+        }
+    }, 30 * 60 * 1000);
+    
+    // 監聽鍵盤快捷鍵
+    document.addEventListener('keydown', function(e) {
+        // Ctrl/Cmd + S: 快速同步
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            if (currentUser && isOnline) {
+                manualSync();
+            }
+        }
+        
+        // Ctrl/Cmd + R: 重新整理邀約列表
+        if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+            e.preventDefault();
+            if (currentUser && currentFunction === 'list') {
+                refreshInvitationList();
+            }
+        }
+        
+        // ESC: 關閉模態框
+        if (e.key === 'Escape') {
+            const editModal = document.getElementById('editModal');
+            if (editModal && editModal.style.display === 'flex') {
+                closeEditModal();
+            }
+        }
+    });
+    
+    // 延遲清理舊資料，避免影響啟動速度
+    setTimeout(clearOldLocalData, 5000);
 });
 
 // ============ PWA功能 ============
@@ -1425,165 +1847,29 @@ document.addEventListener('touchend', function(e) {
     }
     lastTouchEnd = now;
 }, false);
-// 在 script.js 中新增以下函數
 
-// ============ 登出功能 ============
-function showLogoutConfirm() {
-    const logoutConfirm = document.getElementById('logoutConfirm');
-    if (logoutConfirm) {
-        logoutConfirm.style.display = 'flex';
+// ============ 錯誤處理增強 ============
+window.addEventListener('error', function(event) {
+    console.error('全域錯誤:', event.error);
+    
+    // 如果是網路相關錯誤，顯示友善提示
+    if (event.error && event.error.message) {
+        if (event.error.message.includes('fetch') || 
+            event.error.message.includes('network') ||
+            event.error.message.includes('CORS')) {
+            showSyncStatus('網路連接不穩定，請檢查網路狀態', 'warning');
+        }
     }
-}
+});
 
-function hideLogoutConfirm() {
-    const logoutConfirm = document.getElementById('logoutConfirm');
-    if (logoutConfirm) {
-        logoutConfirm.style.display = 'none';
-    }
-}
-
-function confirmLogout() {
-    try {
-        // 清除所有本地儲存資料
-        localStorage.clear();
-        
-        // 重置全域變數
-        currentUser = null;
-        localInvitations = [];
-        invitationCounts = {
-            morning: 0,
-            afternoon: 0,
-            evening: 0,
-            total: 0
-        };
-        quotaLimits = {
-            morning: 0,
-            afternoon: 0,
-            evening: 0,
-            total: 0
-        };
-        editingInvitation = null;
-        sessionOptions = [];
-        
-        // 重置 UI 狀態
-        resetUIToLoginState();
-        
-        // 隱藏確認對話框
-        hideLogoutConfirm();
-        
-        // 顯示成功訊息
-        showAlert('success', '已成功登出，所有本地資料已清除');
-        
-        console.log('登出完成，本地資料已清除');
-        
-    } catch (error) {
-        console.error('登出失敗:', error);
-        showAlert('error', '登出時發生錯誤：' + error.toString());
-    }
-}
-
-function resetUIToLoginState() {
-    // 重置用戶資訊區塊
-    const userInfo = document.getElementById('userInfo');
-    const loginForm = document.getElementById('loginForm');
-    const quotaInfo = document.getElementById('quotaInfo');
-    const sessionQuotas = document.getElementById('sessionQuotas');
-    const functionTabs = document.getElementById('functionTabs');
-    const mainContent = document.getElementById('mainContent');
-    const logoutBtn = document.getElementById('logoutBtn');
-    
-    if (userInfo) {
-        userInfo.classList.remove('logged-in');
-        userInfo.innerHTML = `
-            <div>
-                <div class="user-name">請選擇邀約人員</div>
-            </div>
-            <button class="logout-btn" id="logoutBtn" style="display: none;" onclick="showLogoutConfirm()">
-                登出
-            </button>
-        `;
-    }
-    
-    if (loginForm) loginForm.style.display = 'grid';
-    if (quotaInfo) quotaInfo.style.display = 'none';
-    if (sessionQuotas) sessionQuotas.style.display = 'none';
-    if (functionTabs) functionTabs.style.display = 'none';
-    if (mainContent) mainContent.style.display = 'none';
-    
-    // 清空表單
-    const staffSelect = document.getElementById('staffSelect');
-    const staffPassword = document.getElementById('staffPassword');
-    
-    if (staffSelect) staffSelect.value = '';
-    if (staffPassword) staffPassword.value = '';
-    
-    // 重置功能選擇
-    currentFunction = 'invite';
-    
-    // 清空邀約列表顯示
-    const invitationList = document.getElementById('invitationList');
-    if (invitationList) {
-        invitationList.innerHTML = '<div class="no-data">載入中...</div>';
-    }
-    
-    // 更新本地統計
-    updateLocalStats();
-    updateCountDisplay();
-}
-
-// 修改 updateUserInterface 函數，新增登出按鈕顯示
-function updateUserInterface() {
-    const userInfo = document.getElementById('userInfo');
-    const loginForm = document.getElementById('loginForm');
-    const quotaInfo = document.getElementById('quotaInfo');
-    const sessionQuotas = document.getElementById('sessionQuotas');
-    const functionTabs = document.getElementById('functionTabs');
-    const mainContent = document.getElementById('mainContent');
-    const logoutBtn = document.getElementById('logoutBtn');
-    
-    if (userInfo) {
-        userInfo.classList.add('logged-in');
-        const loginTimeDisplay = currentUser.loginTime ? 
-            ' (登入: ' + formatTime(currentUser.loginTime) + ')' : '';
-        userInfo.innerHTML = `
-            <div>
-                <div class="user-name">${currentUser.name}${loginTimeDisplay}</div>
-            </div>
-            <button class="logout-btn" id="logoutBtn" onclick="showLogoutConfirm()">
-                登出
-            </button>
-        `;
-    }
-    
-    if (loginForm) loginForm.style.display = 'none';
-    if (quotaInfo) quotaInfo.style.display = 'grid';
-    if (sessionQuotas) sessionQuotas.style.display = 'grid';
-    if (functionTabs) functionTabs.style.display = 'flex';
-    if (mainContent) mainContent.style.display = 'block';
-}
-
-// 在 window 物件上導出新函數（供 HTML 呼叫）
-window.showLogoutConfirm = showLogoutConfirm;
-window.hideLogoutConfirm = hideLogoutConfirm;
-window.confirmLogout = confirmLogout;
-
-// 在 DOMContentLoaded 事件中新增對話框點擊背景關閉功能
-document.addEventListener('DOMContentLoaded', function() {
-    // ... 現有的初始化程式碼 ...
-    
-    // 登出確認對話框點擊背景關閉
-    const logoutConfirm = document.getElementById('logoutConfirm');
-    if (logoutConfirm) {
-        logoutConfirm.addEventListener('click', function(e) {
-            if (e.target === this) {
-                hideLogoutConfirm();
-            }
-        });
-    }
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('未處理的Promise拒絕:', event.reason);
+    event.preventDefault(); // 防止控制台報錯
 });
 
 // ============ 全域函數導出（供HTML呼叫） ============
 window.login = login;
+window.logout = logout;
 window.switchFunction = switchFunction;
 window.manualSync = manualSync;
 window.refreshInvitationList = refreshInvitationList;
@@ -1593,3 +1879,5 @@ window.closeEditModal = closeEditModal;
 window.toggleCheckbox = toggleCheckbox;
 window.toggleEditCheckbox = toggleEditCheckbox;
 window.checkQuotaWarning = checkQuotaWarning;
+window.performFullSync = performFullSync;
+window.clearOldLocalData = clearOldLocalData;
